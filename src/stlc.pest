@@ -1,0 +1,53 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+program = { SOI ~ expr ~ EOI }
+
+expr = { lambda | fix | if_expr | comparison }
+
+// Lambda abstraction: \x: Int. body or fn x: Int => body
+lambda = { ("\\" | "fn") ~ ident ~ ":" ~ type_expr ~ ("." | "=>") ~ expr }
+
+// Fix point: fix f: Type. body
+fix = { "fix" ~ ident ~ ":" ~ type_expr ~ "." ~ expr }
+
+// If expression
+if_expr = { "if" ~ expr ~ "then" ~ expr ~ "else" ~ expr }
+
+// Comparison operators (lower precedence than arithmetic)
+comparison = { arith ~ (comp_op ~ arith)* }
+comp_op = { "==" | "<" | ">" }
+
+// Arithmetic operators
+arith = { term ~ (add_op ~ term)* }
+add_op = { "+" | "-" }
+
+term = { factor ~ (mul_op ~ factor)* }
+mul_op = { "*" }
+
+factor = { atom ~ (application)* }
+application = _{ atom }
+
+atom = _{
+    integer
+    | boolean
+    | var
+    | "(" ~ expr ~ ")"
+}
+
+// Variables
+var = { ident }
+ident = @{ !keyword ~ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+keyword = { "fn" | "fix" | "if" | "then" | "else" | "true" | "false" | "Int" | "Bool" }
+
+// Literals
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+boolean = { "true" | "false" }
+
+// Types
+type_expr = { type_arrow }
+type_arrow = { type_atom ~ ("->" ~ type_atom)* }
+type_atom = _{ type_base | "(" ~ type_expr ~ ")" }
+type_base = { "Int" | "Bool" }
+
