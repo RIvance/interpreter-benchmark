@@ -1,7 +1,7 @@
 object DirectInterpreter extends Interpreter {
   override def eval(term: Term)(using env: Env): Value = term match {
-    case Term.Var(index) =>
-      summon[Env].apply(index)
+    
+    case Term.Var(index) => summon[Env].apply(index)
 
     case Term.Lam(parameterType, body) =>
       val captured = summon[Env]

@@ -1,19 +1,18 @@
-object FirstClassEnvInterpreter extends Interpreter {
+object WorkListInterpreter extends Interpreter {
 
   enum EnvTerm {
     case EmptyEnv
     case Var(index: Int)
     case Lam(paramType: Type, body: EnvTerm)
     case Closure(captured: EnvTerm, paramType: Type, body: EnvTerm)
-    case App(leftTerm: EnvTerm, rightTerm: EnvTerm)
+    case App(fnTerm: EnvTerm, argTerm: EnvTerm)
     case IntLit(value: Long)
     case BoolLit(value: Boolean)
     case BinOpInt(kind: IntOpKind, leftTerm: EnvTerm, rightTerm: EnvTerm)
     case BinOpCmp(kind: CmpOpKind, leftTerm: EnvTerm, rightTerm: EnvTerm)
     case If(cond: EnvTerm, thenBranch: EnvTerm, elseBranch: EnvTerm)
     case Fix(annotatedType: Type, body: EnvTerm)
-    case Box(env: EnvTerm, term: EnvTerm)
-    case Merge(leftEnv: EnvTerm, rightEnv: EnvTerm)
+    case Merge(prevEnv: EnvTerm, current: EnvTerm)
     case Record(fields: Map[String, EnvTerm])
     case Proj(record: EnvTerm, field: String)
 
@@ -22,24 +21,26 @@ object FirstClassEnvInterpreter extends Interpreter {
       case IntLit(_) => true
       case BoolLit(_) => true
       case Closure(_, _, body) if body.isValue => true
-      case Merge(left, right) if left.isValue && right.isValue => true
+      case Merge(prevEnv, current) if prevEnv.isValue && current.isValue => true
       case Record(fields) if fields.values.forall(_.isValue) => true
       case Fix(_, body) if body.isValue => true
       case _ => false
     }
 
     def lookup(index: Int): EnvTerm = (index, this) match {
-      case (0, Merge(left, right)) => right
-      case (n, Merge(left, right)) => left.lookup(n - 1)
+      case (0, Merge(prevEnv, current)) => current
+      case (n, Merge(prevEnv, current)) => prevEnv.lookup(n - 1)
       case (_, EmptyEnv) => throw new RuntimeException(s"Unbound variable at index $index")
       case _ => throw new RuntimeException(s"Invalid environment lookup on $this for index $index")
     }
 
-    infix def |>(term: EnvTerm): EnvTerm = Box(this, term)
+    // noinspection RedundantNewCaseClass <- just to keep IDE happy,
+    //  otherwise will it throw a false warning
+    infix def |-(term: EnvTerm) = new |-(this, term)
 
-    infix def |-(term: EnvTerm): Work[EnvTerm] = Work |- (this, term)
+    infix def +(current: EnvTerm): EnvTerm = Merge(this, current)
 
-    def eval: Value = WorkList.Step(EmptyEnv |- this).eval match {
+    def eval: Value = WorkList.Eval(EmptyEnv |- this).eval match {
       case IntLit(n) => Value.IntVal(n)
       case BoolLit(b) => Value.BoolVal(b)
       case Record(fields) =>
@@ -72,16 +73,15 @@ object FirstClassEnvInterpreter extends Interpreter {
 
   override def eval(term: Term)(using _env: Env): Value = term.toEnvTerm.eval
 
-  enum Work[+A] {
-    case |-(env: EnvTerm, term: EnvTerm) extends Work[EnvTerm]
+  case class |-(env: EnvTerm, term: EnvTerm) {
 
     import EnvTerm.*
 
-    private def andThen[B](cont: A => WorkList[B]): WorkList[B] = {
-      WorkList.Step(this).andThen(cont)
+    private def evalThen[B](cont: EnvTerm => WorkList[B]): WorkList[B] = {
+      WorkList.Eval(this).andThen(cont)
     }
 
-    def step[B](f: A => WorkList[B]): WorkList[B] = this match {
+    def step[B](f: EnvTerm => WorkList[B]): WorkList[B] = this match {
       case _   |- value if value.isValue => f(value)
       case env |- Var(index) => f(env.lookup(index))
 
@@ -98,11 +98,11 @@ object FirstClassEnvInterpreter extends Interpreter {
                 }
               case _ => throw new RuntimeException("Integer operation on non-integers")
             }
-          } else (env |- right).andThen { rightValue =>
-            (env |- BinOpInt(kind, left, rightValue)).andThen(f)
+          } else (env |- right).evalThen { rightValue =>
+            (env |- BinOpInt(kind, left, rightValue)).evalThen(f)
           }
-        } else (env |- left).andThen { leftValue =>
-          (env |- BinOpInt(kind, leftValue, right)).andThen(f)
+        } else (env |- left).evalThen { leftValue =>
+          (env |- BinOpInt(kind, leftValue, right)).evalThen(f)
         }
       }
 
@@ -120,66 +120,65 @@ object FirstClassEnvInterpreter extends Interpreter {
                 f(BoolLit(l == r))
               case _ => throw new RuntimeException("Comparison on incompatible types")
             }
-          } else (env |- right).andThen { rightValue =>
-            (env |- BinOpCmp(kind, left, rightValue)).andThen(f)
+          } else (env |- right).evalThen { rightValue =>
+            (env |- BinOpCmp(kind, left, rightValue)).evalThen(f)
           }
-        } else (env |- left).andThen { leftValue =>
-          (env |- BinOpCmp(kind, leftValue, right)).andThen(f)
+        } else (env |- left).evalThen { leftValue =>
+          (env |- BinOpCmp(kind, leftValue, right)).evalThen(f)
         }
       }
 
       case env |- If(cond, thenBranch, elseBranch) => {
         if cond.isValue then {
           cond match {
-            case BoolLit(true)  => (env |- thenBranch).andThen(f)
-            case BoolLit(false) => (env |- elseBranch).andThen(f)
+            case BoolLit(true)  => (env |- thenBranch).evalThen(f)
+            case BoolLit(false) => (env |- elseBranch).evalThen(f)
             case _              => throw new RuntimeException("If condition must be boolean")
           }
-        } else (env |- cond).andThen { condValue =>
-          (env |- If(condValue, thenBranch, elseBranch)).andThen(f)
+        } else (env |- cond).evalThen { condValue =>
+          (env |- If(condValue, thenBranch, elseBranch)).evalThen(f)
         }
       }
 
-      // venv |- <\x. e, cenv> v    --->    ((cenv,v) |> e)  >>=  f
-      // venv |- v e2               --->    (venv |- e2)     >>=  \v2 -> (venv |- v v2) >>= f
-      case env |- App(closure @ Closure(captured, _, body), arg) => {
-        if arg.isValue then {
-          (env |- (Merge(captured, arg) |> body)).andThen(f)
-        } else {
-          (env |- arg).andThen { argValue =>
-            (env |- App(closure, argValue)).andThen(f)
-          }
-        }
-      }
-      // venv |- e1 e2  --->  (venv |- e1)  >>=  \v -> (venv |- v e2) >>= f
-      // An alternative rule:
-      // venv |- e1 e2  --->  (venv |- e1)  >>=  \<\x.e,cenv> ->
-      //                          (venv |- e2)  >>=  \v2 -> (venv |- cenv, v2 |> e) >>= f
       case env |- App(fnTerm, argTerm) => {
-        WorkList.Step(env |- fnTerm).andThen { fnValue =>
-          WorkList.Step(env |- App(fnValue, argTerm)).andThen(f)
+        (env |- fnTerm).evalThen {
+          case Closure(closureEnv, paramType, body) =>
+            (env |- argTerm).evalThen { argValue => (closureEnv + argValue |- body).evalThen(f) }
+          case _ => throw new RuntimeException("Runtime type error: expected closure")
         }
       }
-      case env |- Merge(left, right) => {
-        if left.isValue then {
-          (env |- right).andThen(rightValue => (env |- Merge(left, rightValue)).andThen(f))
+
+      case env |- Merge(prevEnv, current) => {
+        if prevEnv.isValue then {
+          (env |- current).evalThen(currentValue => (env |- Merge(prevEnv, currentValue)).evalThen(f))
         } else {
-          (env |- left).andThen(leftValue => (env |- Merge(leftValue, right)).andThen(f))
+          (env |- prevEnv).evalThen(prevEnvValue => (env |- Merge(prevEnvValue, current)).evalThen(f))
         }
       }
       // Capture the current environment inside the closure
       case env |- Lam(paramType, body) => f(Closure(env, paramType, body))
-      case env |- Box(captured, term) => {
-        if term.isValue then f(term) // discard the environment
-        else (env |- term).andThen { termValue =>
-          (env |- (captured |> termValue)).andThen(f)
-        }
+
+      case env |- (fix @ Fix(annotatedType, body)) => {
+        // reference the normal evaluation strategy for fixpoints
+        // we need to implement this in terms of our worklist
+        // lazy val updatedEnv: Env = {
+        //        val shifted = summon[Env].iterator.map { case (i, v) => (i + 1) -> v }.toMap
+        //        shifted + (0 -> selfRef)
+        //      }
+        //      lazy val result: Value = eval(body)(using updatedEnv)
+        //      lazy val selfRef: Value = Value.Closure { arg =>
+        //        result match {
+        //          case Value.Closure(fn) => fn(arg)
+        //          case _ => throw new RuntimeException("Fixpoint should be a closure")
+        //        }
+        //      }
+        //      result
+        lazy val updatedEnv = env + selfRef
+        lazy val result = (updatedEnv |- body).evalThen(f)
+        lazy val selfRef: EnvTerm = Closure(updatedEnv, annotatedType, fix)
+        result
       }
-      case env |- (fixValue @ Fix(annotatedType, body)) => {
-        (env |- body).andThen { bodyValue =>
-          (env |- (Merge(env, fixValue) |> bodyValue)).andThen(f)
-        }
-      }
+
       case _ |- _ => throw new RuntimeException(s"Invalid evaluation state: $this")
     }
   }
@@ -190,20 +189,20 @@ object FirstClassEnvInterpreter extends Interpreter {
     def step[B](cont: A => WorkList[B]): WorkList[B] = this match {
       case WorkList.Return(value) => cont(value)
       case WorkList.Bind(workList, nextCont) => workList.andThen(a => nextCont(a).andThen(cont))
-      case WorkList.Step(work) => work.step(cont)
+      case WorkList.Eval(work) => work.step(cont)
     }
 
     def eval: A = this match {
       case WorkList.Return(value) => value
       case WorkList.Bind(workList, cont) => workList.step(cont).eval
-      case WorkList.Step(work) => work.step(a => WorkList.Return(a)).eval
+      case WorkList.Eval(work) => work.step(a => WorkList.Return(a)).eval
     }
   }
 
   object WorkList {
     case class Return[A](value: A) extends WorkList[A]
     case class Bind[A, B](workList: WorkList[A], cont: A => WorkList[B]) extends WorkList[B]
-    case class Step[A](work: Work[A]) extends WorkList[A]
+    case class Eval(work: |-) extends WorkList[EnvTerm]
   }
 
 }

@@ -16,7 +16,7 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     }
 
     test(s"FirstClassEnvironmentsInterpreter $description") {
-      val result = FirstClassEnvInterpreter.eval(term)(using Map.empty)
+      val result = WorkListInterpreter.eval(term)(using Map.empty)
       result shouldEqual expected
     }
   }
