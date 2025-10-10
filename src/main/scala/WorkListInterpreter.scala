@@ -218,6 +218,7 @@ object WorkListInterpreter extends Interpreter {
           (env |- prevEnv).evalThen(prevEnvValue => (env |- Merge(prevEnvValue, current)).evalThen(f))
         }
       }
+
       // Capture the current environment inside the closure
       case env |- Lam(paramType, body) => f(Closure(env, paramType, body))
 

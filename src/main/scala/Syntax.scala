@@ -164,4 +164,14 @@ enum Value {
   case BoolVal(b: Boolean)
   case Closure(apply: Value => Value)
   case RecordVal(fields: Map[String, Value])
+
+  override def toString: String = this match {
+    case IntVal(n) => n.toString
+    case BoolVal(b) => b.toString
+    case Closure(_) => "<closure>"
+    case RecordVal(fields) => {
+      val fieldStr = fields.map { case (name, value) => s"$name: $value" }.mkString(", ")
+      s"{ $fieldStr }"
+    }
+  }
 }
