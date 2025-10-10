@@ -1,7 +1,7 @@
 object WorkListInterpreter extends Interpreter {
 
   enum EnvTerm {
-    case EmptyEnv
+    case Empty
     case Var(index: Int)
     case Lam(paramType: Type, body: EnvTerm)
     case Closure(captured: EnvTerm, paramType: Type, body: EnvTerm)
@@ -17,20 +17,19 @@ object WorkListInterpreter extends Interpreter {
     case Proj(record: EnvTerm, field: String)
 
     def isValue: Boolean = this match {
-      case EmptyEnv => true
+      case Empty => true
       case IntLit(_) => true
       case BoolLit(_) => true
-      case Closure(_, _, body) if body.isValue => true
+      case Closure(_, _, _) => true
       case Merge(prevEnv, current) if prevEnv.isValue && current.isValue => true
       case Record(fields) if fields.values.forall(_.isValue) => true
-      case Fix(_, body) if body.isValue => true
       case _ => false
     }
 
     def lookup(index: Int): EnvTerm = (index, this) match {
       case (0, Merge(prevEnv, current)) => current
       case (n, Merge(prevEnv, current)) => prevEnv.lookup(n - 1)
-      case (_, EmptyEnv) => throw new RuntimeException(s"Unbound variable at index $index")
+      case (_, Empty) => throw new RuntimeException(s"Unbound variable at index $index")
       case _ => throw new RuntimeException(s"Invalid environment lookup on $this for index $index")
     }
 
@@ -40,7 +39,7 @@ object WorkListInterpreter extends Interpreter {
 
     infix def +(current: EnvTerm): EnvTerm = Merge(this, current)
 
-    def eval: Value = WorkList.Eval(EmptyEnv |- this).eval match {
+    def eval: Value = WorkList.Eval(Empty |- this).eval match {
       case IntLit(n) => Value.IntVal(n)
       case BoolLit(b) => Value.BoolVal(b)
       case Record(fields) =>
@@ -83,7 +82,9 @@ object WorkListInterpreter extends Interpreter {
 
     def step[B](f: EnvTerm => WorkList[B]): WorkList[B] = this match {
       case _   |- value if value.isValue => f(value)
-      case env |- Var(index) => f(env.lookup(index))
+      case env |- Var(index) =>
+        val lookedUp = env.lookup(index)
+        (env |- lookedUp).evalThen(f)
 
       // Binary operations
       case env |- BinOpInt(kind, left, right) => {
@@ -158,7 +159,15 @@ object WorkListInterpreter extends Interpreter {
       // Capture the current environment inside the closure
       case env |- Lam(paramType, body) => f(Closure(env, paramType, body))
 
-      case env |- (fix @ Fix(annotatedType, body)) => ???
+      case env |- (fix @ Fix(annotatedType, body)) => {
+        // Y-combinator approach for fixpoint:
+        // We evaluate the body in an environment that has the fix itself at index 0
+        // When body is a lambda (which it should be for well-typed programs),
+        // it will become a closure capturing this environment
+        // Later, when Var(0) is accessed inside that closure, it will look up
+        // the fix again, causing the recursion
+        (env + fix |- body).evalThen(f)
+      }
 
       case env |- Record(fields) => {
         // Evaluate all fields to values
