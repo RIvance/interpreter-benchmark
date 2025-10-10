@@ -25,6 +25,8 @@ enum Expr {
   case Fix(name: String, tpe: Type, body: Expr)
   case Record(fields: Map[String, Expr])
   case Proj(record: Expr, field: String)
+  case Let(name: String, value: Expr, body: Expr)
+  case LetRec(name: String, tpe: Type, value: Expr, body: Expr)
 
   /**
    * Convert this expression (with names) to a Term (with De Bruijn indices).
@@ -85,6 +87,21 @@ enum Expr {
       case Expr.Proj(record, field) =>
         val recordTerm = record.toTerm(stack)
         Term.Proj(recordTerm, field)
+
+      case Expr.Let(name, value, body) =>
+        // let x = e1 in e2  ~~>  (\x. e2) e1
+        val valueTerm = value.toTerm(stack)
+        val extended = name :: stack
+        val bodyTerm = body.toTerm(extended)
+        Term.App(Term.Lam(valueTerm.infer(), bodyTerm), valueTerm)
+
+      case Expr.LetRec(name, tpe, value, body) =>
+        // let rec f: T = e1 in e2  ~~>  (\f. e2) (fix f: T. e1)
+        val extended = name :: stack
+        val valueTerm = value.toTerm(extended)
+        val fixTerm = Term.Fix(tpe, valueTerm)
+        val bodyTerm = body.toTerm(extended)
+        Term.App(Term.Lam(tpe, bodyTerm), fixTerm)
     }
   }
 }
@@ -101,6 +118,45 @@ enum Term {
   case Fix(annotatedType: Type, body: Term)
   case Record(fields: Map[String, Term])
   case Proj(record: Term, field: String)
+
+  /**
+   * Infer the type of this term.
+   * @param typeEnv type environment mapping De Bruijn indices to types
+   */
+  def infer(typeEnv: List[Type] = Nil): Type = this match {
+    case Term.Var(index) =>
+      if (index >= 0 && index < typeEnv.length) typeEnv(index)
+      else throw new RuntimeException(s"Variable index $index out of bounds in type environment")
+
+    case Term.Lam(parameterType, body) =>
+      val extendedEnv = parameterType :: typeEnv
+      Type.Arrow(parameterType, body.infer(extendedEnv))
+
+    case Term.App(leftTerm, rightTerm) =>
+      leftTerm.infer(typeEnv) match {
+        case Type.Arrow(_, to) => to
+        case other => throw new RuntimeException(s"Cannot apply non-function type: $other")
+      }
+
+    case Term.IntLit(_)         => Type.IntType
+    case Term.BoolLit(_)        => Type.BoolType
+    case Term.BinOpInt(_, _, _) => Type.IntType
+    case Term.BinOpCmp(_, _, _) => Type.BoolType
+
+    case Term.If(_, thenBranch, _) => thenBranch.infer(typeEnv)
+
+    case Term.Fix(annotatedType, _) => annotatedType
+
+    case Term.Record(fields) =>
+      Type.RecordType(fields.map { case (name, term) => (name, term.infer(typeEnv)) })
+
+    case Term.Proj(record, field) =>
+      record.infer(typeEnv) match {
+        case Type.RecordType(fields) => fields.getOrElse(field,
+          throw new RuntimeException(s"Field $field not found in record"))
+        case _ => throw new RuntimeException("Cannot project from non-record type")
+      }
+  }
 }
 
 enum Value {

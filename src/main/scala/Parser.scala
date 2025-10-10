@@ -15,7 +15,7 @@ object Parser extends RegexParsers with PackratParsers {
 
   // -------- Lexical --------
   private val keywords: Set[String] =
-    Set("fn", "fix", "if", "then", "else", "true", "false", "Int", "Bool")
+    Set("fn", "fix", "if", "then", "else", "true", "false", "Int", "Bool", "let", "in", "rec")
 
   lazy val ident: PackratParser[String] =
     """[A-Za-z][A-Za-z0-9_]*""".r flatMap { s =>
@@ -48,7 +48,7 @@ object Parser extends RegexParsers with PackratParsers {
     phrase(expr)
 
   lazy val expr: PackratParser[Expr] =
-    lambda | fix | ifExpr | comparison
+    lambda | fix | ifExpr | letExpr | letRecExpr | comparison
 
   // \x: T. e   |  fn x: T => e
   lazy val lambda: PackratParser[Expr] =
@@ -60,6 +60,18 @@ object Parser extends RegexParsers with PackratParsers {
   lazy val fix: PackratParser[Expr] =
     ("fix" ~> ident) ~ (":" ~> typeExpr) ~ ("." ~> expr) ^^ {
       case name ~ tpe ~ body => Expr.Fix(name, tpe, body)
+    }
+
+  // let x = e1 in e2
+  lazy val letExpr: PackratParser[Expr] =
+    ("let" ~> ident) ~ ("=" ~> expr) ~ ("in" ~> expr) ^^ {
+      case name ~ value ~ body => Expr.Let(name, value, body)
+    }
+
+  // let rec f: T = e1 in e2
+  lazy val letRecExpr: PackratParser[Expr] =
+    ("let" ~> "rec" ~> ident) ~ (":" ~> typeExpr) ~ ("=" ~> expr) ~ ("in" ~> expr) ^^ {
+      case name ~ tpe ~ value ~ body => Expr.LetRec(name, tpe, value, body)
     }
 
   // if e1 then e2 else e3
