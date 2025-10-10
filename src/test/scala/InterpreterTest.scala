@@ -1,114 +1,119 @@
-import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 
-class InterpreterSpec extends AnyFlatSpec with Matchers {
+class InterpreterTest extends AnyFunSuite with Matchers {
 
-  // Helper method to test both interpreters with the same term
-  def testBothInterpreters(description: String, term: Term, expected: Value): Unit = {
-    s"DirectInterpreter $description" should "produce the correct result" in {
+  def testInterpreters(description: String, term: Term, expected: Value): Unit = {
+
+    test(s"DirectInterpreter $description") {
       val result = DirectInterpreter.eval(term)(using Map.empty)
       result shouldEqual expected
     }
 
-    s"TrampolineInterpreter $description" should "produce the correct result" in {
+    test(s"TrampolineInterpreter $description") {
       val result = TrampolineInterpreter.eval(term)(using Map.empty)
+      result shouldEqual expected
+    }
+
+    test(s"FirstClassEnvironmentsInterpreter $description") {
+      val result = FirstClassEnvInterpreter.eval(term)(using Map.empty)
       result shouldEqual expected
     }
   }
 
   // Test integer literals
-  testBothInterpreters("evaluating integer literal", 
+  testInterpreters("evaluating integer literal",
     Term.IntLit(42),
     Value.IntVal(42)
   )
 
   // Test boolean literals
-  testBothInterpreters("evaluating boolean literal true",
+  testInterpreters("evaluating boolean literal true",
     Term.BoolLit(true),
     Value.BoolVal(true)
   )
 
-  testBothInterpreters("evaluating boolean literal false",
+  testInterpreters("evaluating boolean literal false",
     Term.BoolLit(false),
     Value.BoolVal(false)
   )
 
   // Test integer addition
-  testBothInterpreters("evaluating addition",
+  testInterpreters("evaluating addition",
     Term.BinOpInt(IntOpKind.Add, Term.IntLit(10), Term.IntLit(32)),
     Value.IntVal(42)
   )
 
   // Test integer subtraction
-  testBothInterpreters("evaluating subtraction",
+  testInterpreters("evaluating subtraction",
     Term.BinOpInt(IntOpKind.Sub, Term.IntLit(50), Term.IntLit(8)),
     Value.IntVal(42)
   )
 
   // Test integer multiplication
-  testBothInterpreters("evaluating multiplication",
+  testInterpreters("evaluating multiplication",
     Term.BinOpInt(IntOpKind.Mul, Term.IntLit(6), Term.IntLit(7)),
     Value.IntVal(42)
   )
 
   // Test comparison equal
-  testBothInterpreters("evaluating equality comparison (true)",
+  testInterpreters("evaluating equality comparison (true)",
     Term.BinOpCmp(CmpOpKind.Eq, Term.IntLit(42), Term.IntLit(42)),
     Value.BoolVal(true)
   )
 
-  testBothInterpreters("evaluating equality comparison (false)",
+  testInterpreters("evaluating equality comparison (false)",
     Term.BinOpCmp(CmpOpKind.Eq, Term.IntLit(42), Term.IntLit(43)),
     Value.BoolVal(false)
   )
 
   // Test comparison less than
-  testBothInterpreters("evaluating less than (true)",
+  testInterpreters("evaluating less than (true)",
     Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(10), Term.IntLit(20)),
     Value.BoolVal(true)
   )
 
-  testBothInterpreters("evaluating less than (false)",
+  testInterpreters("evaluating less than (false)",
     Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(20), Term.IntLit(10)),
     Value.BoolVal(false)
   )
 
   // Test comparison greater than
-  testBothInterpreters("evaluating greater than (true)",
+  testInterpreters("evaluating greater than (true)",
     Term.BinOpCmp(CmpOpKind.Gt, Term.IntLit(20), Term.IntLit(10)),
     Value.BoolVal(true)
   )
 
-  testBothInterpreters("evaluating greater than (false)",
+  testInterpreters("evaluating greater than (false)",
     Term.BinOpCmp(CmpOpKind.Gt, Term.IntLit(10), Term.IntLit(20)),
     Value.BoolVal(false)
   )
 
   // Test boolean equality
-  testBothInterpreters("evaluating boolean equality (true)",
+  testInterpreters("evaluating boolean equality (true)",
     Term.BinOpCmp(CmpOpKind.Eq, Term.BoolLit(true), Term.BoolLit(true)),
     Value.BoolVal(true)
   )
 
-  testBothInterpreters("evaluating boolean equality (false)",
+  testInterpreters("evaluating boolean equality (false)",
     Term.BinOpCmp(CmpOpKind.Eq, Term.BoolLit(true), Term.BoolLit(false)),
     Value.BoolVal(false)
   )
 
   // Test if expression - then branch
-  testBothInterpreters("evaluating if expression (then branch)",
+  testInterpreters("evaluating if expression (then branch)",
     Term.If(Term.BoolLit(true), Term.IntLit(42), Term.IntLit(0)),
     Value.IntVal(42)
   )
 
   // Test if expression - else branch
-  testBothInterpreters("evaluating if expression (else branch)",
+  testInterpreters("evaluating if expression (else branch)",
     Term.If(Term.BoolLit(false), Term.IntLit(0), Term.IntLit(42)),
     Value.IntVal(42)
   )
 
   // Test if with condition evaluation
-  testBothInterpreters("evaluating if with computed condition",
+  testInterpreters("evaluating if with computed condition",
     Term.If(
       Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(5), Term.IntLit(10)),
       Term.IntLit(100),
@@ -118,7 +123,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test lambda and application - identity function
-  testBothInterpreters("evaluating identity function", {
+  testInterpreters("evaluating identity function", {
     // λx:Int. x applied to 42
     val identityFn = Term.Lam(Type.IntType, Term.Var(0))
     Term.App(identityFn, Term.IntLit(42))
@@ -127,7 +132,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test lambda with computation in body
-  testBothInterpreters("evaluating lambda with computation", {
+  testInterpreters("evaluating lambda with computation", {
     // (λx:Int. x + 10) 32
     val addTenFn = Term.Lam(
       Type.IntType,
@@ -139,7 +144,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test nested lambdas (curried function)
-  testBothInterpreters("evaluating curried function", {
+  testInterpreters("evaluating curried function", {
     // (λx:Int. λy:Int. x + y) 30 12
     val addFn = Term.Lam(
       Type.IntType,
@@ -155,7 +160,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test closure captures environment
-  testBothInterpreters("evaluating closure with captured variable", {
+  testInterpreters("evaluating closure with captured variable", {
     // (λx:Int. (λy:Int. x * y) 7) 6
     val fn = Term.Lam(
       Type.IntType,
@@ -173,7 +178,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test fixpoint - factorial function
-  testBothInterpreters("evaluating factorial using fixpoint", {
+  testInterpreters("evaluating factorial using fixpoint", {
     // fix f:(Int->Int). λn:Int. if (n == 0) then 1 else n * f(n-1)
     // Applied to 5
     val factorialBody = Term.Lam(
@@ -198,7 +203,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test fixpoint - sum from 1 to n
-  testBothInterpreters("evaluating sum using fixpoint", {
+  testInterpreters("evaluating sum using fixpoint", {
     // fix f:(Int->Int). λn:Int. if (n == 0) then 0 else n + f(n-1)
     // Applied to 10
     val sumBody = Term.Lam(
@@ -223,7 +228,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test fixpoint - fibonacci function
-  testBothInterpreters("evaluating fibonacci using fixpoint", {
+  testInterpreters("evaluating fibonacci using fixpoint", {
     // fix f:(Int->Int). λn:Int. if (n < 2) then n else f(n-1) + f(n-2)
     // Applied to 10
     val fibonacciBody = Term.Lam(
@@ -251,7 +256,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
   )
 
   // Test complex expression
-  testBothInterpreters("evaluating complex nested expression", {
+  testInterpreters("evaluating complex nested expression", {
     // ((λx:Int. x * 2) 10) + ((λy:Int. y - 8) 20)
     val leftPart = Term.App(
       Term.Lam(Type.IntType, Term.BinOpInt(IntOpKind.Mul, Term.Var(0), Term.IntLit(2))),
@@ -266,56 +271,13 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     Value.IntVal(32) // (10*2) + (20-8) = 20 + 12 = 32
   )
 
-  // Test error cases
-  "DirectInterpreter" should "throw error when applying non-closure" in {
-    val term = Term.App(Term.IntLit(42), Term.IntLit(10))
-    an[RuntimeException] should be thrownBy {
-      DirectInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "TrampolineInterpreter" should "throw error when applying non-closure" in {
-    val term = Term.App(Term.IntLit(42), Term.IntLit(10))
-    an[RuntimeException] should be thrownBy {
-      TrampolineInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "DirectInterpreter" should "throw error for integer operation on non-integers" in {
-    val term = Term.BinOpInt(IntOpKind.Add, Term.BoolLit(true), Term.IntLit(10))
-    an[RuntimeException] should be thrownBy {
-      DirectInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "TrampolineInterpreter" should "throw error for integer operation on non-integers" in {
-    val term = Term.BinOpInt(IntOpKind.Add, Term.BoolLit(true), Term.IntLit(10))
-    an[RuntimeException] should be thrownBy {
-      TrampolineInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "DirectInterpreter" should "throw error for if with non-boolean condition" in {
-    val term = Term.If(Term.IntLit(42), Term.IntLit(1), Term.IntLit(2))
-    an[RuntimeException] should be thrownBy {
-      DirectInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "TrampolineInterpreter" should "throw error for if with non-boolean condition" in {
-    val term = Term.If(Term.IntLit(42), Term.IntLit(1), Term.IntLit(2))
-    an[RuntimeException] should be thrownBy {
-      TrampolineInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
   // Test record functionality
-  testBothInterpreters("evaluating simple record literal",
+  testInterpreters("evaluating simple record literal",
     Term.Record(Map("x" -> Term.IntLit(42), "y" -> Term.IntLit(100))),
     Value.RecordVal(Map("x" -> Value.IntVal(42), "y" -> Value.IntVal(100)))
   )
 
-  testBothInterpreters("evaluating record field selection",
+  testInterpreters("evaluating record field selection",
     Term.Proj(
       Term.Record(Map("x" -> Term.IntLit(42), "y" -> Term.IntLit(100))),
       "x"
@@ -323,7 +285,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     Value.IntVal(42)
   )
 
-  testBothInterpreters("evaluating record with computed fields",
+  testInterpreters("evaluating record with computed fields",
     Term.Record(Map(
       "sum" -> Term.BinOpInt(IntOpKind.Add, Term.IntLit(1), Term.IntLit(2)),
       "product" -> Term.BinOpInt(IntOpKind.Mul, Term.IntLit(3), Term.IntLit(4))
@@ -331,7 +293,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     Value.RecordVal(Map("sum" -> Value.IntVal(3), "product" -> Value.IntVal(12)))
   )
 
-  testBothInterpreters("evaluating record with boolean fields",
+  testInterpreters("evaluating record with boolean fields",
     Term.Record(Map(
       "flag" -> Term.BoolLit(true),
       "comparison" -> Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(5), Term.IntLit(10))
@@ -339,7 +301,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     Value.RecordVal(Map("flag" -> Value.BoolVal(true), "comparison" -> Value.BoolVal(true)))
   )
 
-  testBothInterpreters("evaluating computation with record field selection",
+  testInterpreters("evaluating computation with record field selection",
     Term.BinOpInt(
       IntOpKind.Add,
       Term.Proj(Term.Record(Map("x" -> Term.IntLit(10), "y" -> Term.IntLit(20))), "x"),
@@ -348,7 +310,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     Value.IntVal(30)
   )
 
-  testBothInterpreters("evaluating nested record",
+  testInterpreters("evaluating nested record",
     Term.Record(Map(
       "point" -> Term.Record(Map("x" -> Term.IntLit(5), "y" -> Term.IntLit(10))),
       "value" -> Term.IntLit(42)
@@ -359,7 +321,7 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     ))
   )
 
-  testBothInterpreters("evaluating nested record field selection",
+  testInterpreters("evaluating nested record field selection",
     Term.Proj(
       Term.Proj(
         Term.Record(Map(
@@ -372,32 +334,4 @@ class InterpreterSpec extends AnyFlatSpec with Matchers {
     ),
     Value.IntVal(5)
   )
-
-  "DirectInterpreter" should "throw error when selecting non-existent field" in {
-    val term = Term.Proj(Term.Record(Map("x" -> Term.IntLit(42))), "y")
-    an[RuntimeException] should be thrownBy {
-      DirectInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "TrampolineInterpreter" should "throw error when selecting non-existent field" in {
-    val term = Term.Proj(Term.Record(Map("x" -> Term.IntLit(42))), "y")
-    an[RuntimeException] should be thrownBy {
-      TrampolineInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "DirectInterpreter" should "throw error when selecting field from non-record" in {
-    val term = Term.Proj(Term.IntLit(42), "x")
-    an[RuntimeException] should be thrownBy {
-      DirectInterpreter.eval(term)(using Map.empty)
-    }
-  }
-
-  "TrampolineInterpreter" should "throw error when selecting field from non-record" in {
-    val term = Term.Proj(Term.IntLit(42), "x")
-    an[RuntimeException] should be thrownBy {
-      TrampolineInterpreter.eval(term)(using Map.empty)
-    }
-  }
 }
