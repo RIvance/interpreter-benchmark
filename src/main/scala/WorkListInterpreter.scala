@@ -1,3 +1,65 @@
+/**
+ * Small-step semantics is good for reasoning. For instance, standard type
+ *  soundness results such as progress and preservation are proved with
+ *  small step semantics. However, small-step is bad for implementations:
+ *  Two (performance) problems in small-step:
+ *
+ * 1) Substitution is bad as it requires traversing the terms each time it is used.
+ *
+ *  (\x. e) v ---> [v/x] e          </br>
+ *
+ * 2) AST keeps getting reconstructed
+ *
+ *  e1 ---> e1'                     </br>
+ *  -----------------               </br>
+ *  e1 e2 ---> e1' e2               </br>
+ *
+ *  Congruence rules like this one apply a rewrite step and rebuild the AST
+ *
+ *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1
+ *  --------------------------------------------------------------------------              </br>
+ *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2
+ *  ------------------------------------------------------------------------------          </br>
+ *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 3 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2 3
+ *  ----------------------------------------------------------------------------------      </br>
+ *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 3 4 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2 3 4
+ *  ------------------------------------------------------------------------------------    </br>
+ *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 3 4 5 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2 3 4
+ *
+ *  v = \x5. 1 + 2 + 3 + 4 + x5
+ *
+ * Big-step semantics does not have the performance problems of small-step. However,
+ *  its (generally) recursive style is prone to stack-overflows. Furthermore,
+ *  big-step has some problems for reasoning as it usually can only express properties
+ *  about terminating programs.
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ *
+ * Our goal is to find a style of semantics that is good for reasoning and also
+ *  good for implementations.
+ *
+ * What we show next is an AST for STLC with an environment-based semantics
+ *  (basically the variant described in Section 6.2).
+ *
+ *  This is based on:
+ *    A Case for first-class environments, OOPSLA 2024
+ *
+ * In an environment based semantics, there is no substitution. Beta reduction is:
+ *
+ *  venv |- <\x. e, cenv> v ---> (cenv,v) |> e        </br>
+ *  venv |- (\x. e) ---> <\x. e, venv>                </br>
+ *
+ * The environment based semantics is still small step and good for reasoning, and it
+ *  also eliminates substitution, which is one of the burdens for small-step. But
+ *  it does not eliminate the problem of AST reconstruction. Furthermore, the notion
+ *  of boxes (used in beta reduction) is needed to represent intermediate states in reduction.
+ *
+ * To address the problems we use inspiration from a previous work on type inference where
+ *  we have employed a worklist approach:
+ *
+ * A Mechanical Formalization of Higher-Ranked Polymorphic Type Inference, ICFP 2019
+ *
+ */
 object WorkListInterpreter extends Interpreter {
 
   enum EnvTerm {
@@ -161,11 +223,11 @@ object WorkListInterpreter extends Interpreter {
 
       case env |- (fix @ Fix(annotatedType, body)) => {
         // Y-combinator approach for fixpoint:
-        // We evaluate the body in an environment that has the fix itself at index 0
-        // When body is a lambda (which it should be for well-typed programs),
-        // it will become a closure capturing this environment
-        // Later, when Var(0) is accessed inside that closure, it will look up
-        // the fix again, causing the recursion
+        //  We evaluate the body in an environment that has the fix itself at index 0
+        //  When body is a lambda (which it should be for well-typed programs),
+        //  it will become a closure capturing this environment
+        //  Later, when Var(0) is accessed inside that closure, it will look up
+        //  the fix again, causing the recursion
         (env + fix |- body).evalThen(f)
       }
 
