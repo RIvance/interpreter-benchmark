@@ -2,6 +2,7 @@ enum Type {
   case IntType
   case BoolType
   case Arrow(from: Type, to: Type)
+  case RecordType(fields: Map[String, Type])
 }
 
 enum IntOpKind {
@@ -22,9 +23,11 @@ enum Expr {
   case BinOpCmp(kind: CmpOpKind, lhs: Expr, rhs: Expr)
   case If(cond: Expr, thenBr: Expr, elseBr: Expr)
   case Fix(name: String, tpe: Type, body: Expr)
+  case Record(fields: Map[String, Expr])
+  case Proj(record: Expr, field: String)
 
-  /** Convert this expression (with names) to a Term (with De Bruijn indices).
-   *
+  /**
+   * Convert this expression (with names) to a Term (with De Bruijn indices).
    * @param stack binding stack; head = most-recent binding
    */
   def toTerm(stack: List[String] = Nil): Term = {
@@ -74,6 +77,14 @@ enum Expr {
         val extended = name :: stack
         val bodyTerm = body.toTerm(extended)
         Term.Fix(tpe, bodyTerm)
+
+      case Expr.Record(fields) =>
+        val termFields = fields.map { case (name, expr) => (name, expr.toTerm(stack)) }
+        Term.Record(termFields)
+
+      case Expr.Proj(record, field) =>
+        val recordTerm = record.toTerm(stack)
+        Term.Proj(recordTerm, field)
     }
   }
 }
@@ -88,10 +99,13 @@ enum Term {
   case BinOpCmp(kind: CmpOpKind, leftTerm: Term, rightTerm: Term)
   case If(cond: Term, thenBranch: Term, elseBranch: Term)
   case Fix(annotatedType: Type, body: Term)
+  case Record(fields: Map[String, Term])
+  case Proj(record: Term, field: String)
 }
 
 enum Value {
   case IntVal(n: Long)
   case BoolVal(b: Boolean)
   case Closure(apply: Value => Value)
+  case RecordVal(fields: Map[String, Value])
 }

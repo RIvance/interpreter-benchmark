@@ -70,5 +70,16 @@ object DirectInterpreter extends Interpreter {
         }
       }
       result
+
+    case Term.Record(fields) =>
+      val evaluatedFields = fields.map { case (name, term) => (name, eval(term)) }
+      Value.RecordVal(evaluatedFields)
+
+    case Term.Proj(record, field) =>
+      eval(record) match {
+        case Value.RecordVal(fields) =>
+          fields.getOrElse(field, throw new RuntimeException(s"Field '$field' not found in record"))
+        case _ => throw new RuntimeException("Select operation on non-record value")
+      }
   }
 }

@@ -92,5 +92,26 @@ object TrampolineInterpreter extends Interpreter {
         }
         done(result)
       }
+
+    case Term.Record(fields) =>
+      // Evaluate all fields in sequence using trampolined evaluation
+      val fieldsList = fields.toList
+      def evalFields(remaining: List[(String, Term)], acc: Map[String, Value]): Trampoline[Value] = {
+        remaining match {
+          case Nil => done(Value.RecordVal(acc))
+          case (name, term) :: rest =>
+            evalTramp(term).flatMap { value =>
+              delay(evalFields(rest, acc + (name -> value)))
+            }
+        }
+      }
+      delay(evalFields(fieldsList, Map.empty))
+
+    case Term.Proj(record, field) =>
+      evalTramp(record).map {
+        case Value.RecordVal(fields) =>
+          fields.getOrElse(field, throw new RuntimeException(s"Field '$field' not found in record"))
+        case _ => throw new RuntimeException("Select operation on non-record value")
+      }
   }
 }

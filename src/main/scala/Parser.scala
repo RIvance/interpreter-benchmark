@@ -35,7 +35,13 @@ object Parser extends RegexParsers with PackratParsers {
   lazy val typeAtom: PackratParser[Type] =
     ("Int"  ^^^ Type.IntType) |
       ("Bool" ^^^ Type.BoolType) |
+      recordType |
       "(" ~> typeExpr <~ ")"
+
+  lazy val recordType: PackratParser[Type] =
+    "{" ~> repsep(ident ~ (":" ~> typeExpr), ",") <~ "}" ^^ { fields =>
+      Type.RecordType(fields.map { case name ~ tpe => (name, tpe) }.toMap)
+    }
 
   // -------- Expressions --------
   lazy val program: PackratParser[Expr] =
@@ -106,8 +112,29 @@ object Parser extends RegexParsers with PackratParsers {
     (intLit ^^ (n => Expr.IntLit(n))) |
     ("true"  ^^^ Expr.BoolLit(true)) |
     ("false" ^^^ Expr.BoolLit(false)) |
+    recordLiteral |
     (ident ^^ (s => Expr.Var(s))) |
-    ("(" ~> expr <~ ")")
+    ("(" ~> expr <~ ")") |
+    selectChain
+
+  lazy val recordLiteral: PackratParser[Expr] =
+    "{" ~> repsep(ident ~ ("=" ~> expr), ",") <~ "}" ^^ { fields =>
+      Expr.Record(fields.map { case name ~ value => (name, value) }.toMap)
+    }
+
+  lazy val selectChain: PackratParser[Expr] =
+    (ident | ("(" ~> expr <~ ")")) ~ rep("." ~> ident) ^^ {
+      case base ~ Nil => base match {
+        case s: String => Expr.Var(s)
+        case e: Expr => e
+      }
+      case base ~ fields =>
+        val baseExpr = base match {
+          case s: String => Expr.Var(s)
+          case e: Expr => e
+        }
+        fields.foldLeft(baseExpr)((acc, field) => Expr.Proj(acc, field))
+    }
 
   // -------- Public API --------
   def parse(input: String): Expr = {
