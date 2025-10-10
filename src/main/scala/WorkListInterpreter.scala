@@ -158,25 +158,41 @@ object WorkListInterpreter extends Interpreter {
       // Capture the current environment inside the closure
       case env |- Lam(paramType, body) => f(Closure(env, paramType, body))
 
-      case env |- (fix @ Fix(annotatedType, body)) => {
-        // reference the normal evaluation strategy for fixpoints
-        // we need to implement this in terms of our worklist
-        // lazy val updatedEnv: Env = {
-        //        val shifted = summon[Env].iterator.map { case (i, v) => (i + 1) -> v }.toMap
-        //        shifted + (0 -> selfRef)
-        //      }
-        //      lazy val result: Value = eval(body)(using updatedEnv)
-        //      lazy val selfRef: Value = Value.Closure { arg =>
-        //        result match {
-        //          case Value.Closure(fn) => fn(arg)
-        //          case _ => throw new RuntimeException("Fixpoint should be a closure")
-        //        }
-        //      }
-        //      result
-        lazy val updatedEnv = env + selfRef
-        lazy val result = (updatedEnv |- body).evalThen(f)
-        lazy val selfRef: EnvTerm = Closure(updatedEnv, annotatedType, fix)
-        result
+      case env |- (fix @ Fix(annotatedType, body)) => ???
+
+      case env |- Record(fields) => {
+        // Evaluate all fields to values
+        def evalFields(remaining: List[(String, EnvTerm)], acc: Map[String, EnvTerm]): WorkList[EnvTerm] = {
+          remaining match {
+            case Nil => WorkList.Return(Record(acc))
+            case (name, fieldTerm) :: rest =>
+              if fieldTerm.isValue then {
+                evalFields(rest, acc + (name -> fieldTerm))
+              } else {
+                (env |- fieldTerm).evalThen { fieldValue =>
+                  evalFields(rest, acc + (name -> fieldValue))
+                }
+              }
+          }
+        }
+        evalFields(fields.toList, Map.empty).andThen(f)
+      }
+
+      case env |- Proj(record, field) => {
+        if record.isValue then {
+          record match {
+            case Record(fields) =>
+              fields.get(field) match {
+                case Some(value) => f(value)
+                case None => throw new RuntimeException(s"Field '$field' not found in record")
+              }
+            case _ => throw new RuntimeException("Projection on non-record value")
+          }
+        } else {
+          (env |- record).evalThen { recordValue =>
+            (env |- Proj(recordValue, field)).evalThen(f)
+          }
+        }
       }
 
       case _ |- _ => throw new RuntimeException(s"Invalid evaluation state: $this")
