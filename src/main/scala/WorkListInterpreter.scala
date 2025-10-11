@@ -195,8 +195,8 @@ object WorkListInterpreter extends Interpreter {
       case env |- App(fnTerm, argTerm) => for {
         case Closure(closureEnv, paramType, body) <- (env |- fnTerm).eval
         argValue <- (env |- argTerm).eval
-        result <- (closureEnv + argValue |- body).eval
-      } yield f(result).eval
+        result <- (closureEnv + argValue |- body).evalThen(f)
+      } yield result
 
       case env |- Merge(prevEnv, current) => for {
         prevEnvValue <- (env |- prevEnv).eval
