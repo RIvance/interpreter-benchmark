@@ -38,8 +38,9 @@ object TrampolineInterpreter extends Interpreter {
     case Term.Var(index) =>
       env(index) match {
         case fix @ TrampValue.FixThunk(annotatedType, body, captured) =>
-          // When a FixThunk is looked up, evaluate its body in the CURRENT environment
-          // The current environment already contains the thunk at the appropriate index
+          // When a FixThunk is looked up, evaluate its body in the captured environment
+          //  and since we cannot have self-reference when building the captured env,
+          //  we now put a simple thunk at index 0 that will evaluate to the fixpoint
           tailcall(evalTramp(body)(using captured + (0 -> fix)))
         case value => done(value)
       }
