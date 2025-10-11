@@ -8,5 +8,5 @@ lazy val root = (project in file("."))
   )
 
 libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % "2.4.0"
-libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.18" % Test
-libraryDependencies += "info.picocli" % "picocli" % "4.7.5"
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % Test
+libraryDependencies += "info.picocli" % "picocli" % "4.7.7"
