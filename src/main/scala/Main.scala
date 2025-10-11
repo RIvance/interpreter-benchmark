@@ -1,83 +1,120 @@
-import picocli.CommandLine
-import picocli.CommandLine.{Command, Option, Parameters}
-
 import java.io.File
 import scala.io.Source
 import scala.util.{Try, Success, Failure}
+import scala.annotation.tailrec
 
-@Command(
-  name = "stlc-interpreter",
-  mixinStandardHelpOptions = true,
-  version = Array("0.1.0"),
-  description = Array("Evaluates STLC source code files with different interpreter strategies")
-)
-class Main extends Runnable {
+object Main {
 
-  @Parameters(
-    index = "0",
-    description = Array("Source file to evaluate (.stlc)")
+  private def printUsage(): Unit = {
+    println(
+      """stlc-interpreter
+        |
+        |Usage: stlc-interpreter [options] <source-file>
+        |
+        |Arguments:
+        |  <source-file>              Source file to evaluate (.stlc)
+        |
+        |Options:
+        |  -i, --interpreter <type>   Interpreter type: direct, trampoline, worklist (default: direct)
+        |  -h, --help                 Show this help message
+        |""".stripMargin
+    )
+  }
+
+  private case class Config(
+    sourceFile: Option[File] = None,
+    interpreterType: String = "direct"
   )
-  var sourceFile: File = _
 
-  @Option(
-    names = Array("-i", "--interpreter"),
-    description = Array("Interpreter type: direct, trampoline, worklist (default: direct)"),
-    defaultValue = "direct"
-  )
-  var interpreterType: String = _
+  private def parseArgs(args: Array[String]): Either[String, Config] = {
+    @tailrec
+    def parse(remaining: List[String], config: Config): Either[String, Config] = {
+      remaining match {
+        case Nil =>
+          config.sourceFile match {
+            case Some(_) => Right(config)
+            case None => Left("Error: Source file is required")
+          }
 
-  override def run(): Unit = {
-    // Validate file exists
-    if (!sourceFile.exists()) {
-      System.err.println(s"Error: File not found: ${sourceFile.getPath}")
+        case "-h" :: _ | "--help" :: _ =>
+          printUsage()
+          System.exit(0)
+          Right(config) // unreachable
+
+        case ("-i" | "--interpreter") :: interpreterType :: tail =>
+          parse(tail, config.copy(interpreterType = interpreterType))
+
+        case ("-i" | "--interpreter") :: Nil =>
+          Left("Error: --interpreter option requires an argument")
+
+        case arg :: tail if arg.startsWith("-") =>
+          Left(s"Error: Unknown option: $arg")
+
+        case sourceFile :: tail =>
+          config.sourceFile match {
+            case None => parse(tail, config.copy(sourceFile = Some(File(sourceFile))))
+            case Some(_) => Left(s"Error: Multiple source files specified: ${config.sourceFile.get.getPath} and $sourceFile")
+          }
+      }
+    }
+
+    parse(args.toList, Config())
+  }
+
+  def main(args: Array[String]): Unit = parseArgs(args) match {
+
+    case Left(error) => {
+      System.err.println(error)
+      System.err.println("Use --help for usage information")
       System.exit(1)
     }
 
-    // Read source file
-    val sourceCode = Try {
-      val source = Source.fromFile(sourceFile)
-      try source.mkString finally source.close()
-    } match {
-      case Success(code) => code
-      case Failure(exception) => {
-        System.err.println(s"Error reading file: ${exception.getMessage}")
-        System.exit(1)
-        throw new RuntimeException("Unreachable")
-      }
-    }
+    case Right(config) => {
+      val sourceFile = config.sourceFile.get
 
-    // Select interpreter
-    val interpreter: Interpreter = interpreterType.toLowerCase match {
-      case "direct" => DirectInterpreter
-      case "trampoline" => TrampolineInterpreter
-      case "worklist" => WorkListInterpreter
-      case unknown =>
-        System.err.println(s"Error: Unknown interpreter type: $unknown")
-        System.err.println("Valid options are: direct, trampoline, worklist")
-        System.exit(1)
-        throw new RuntimeException("Unreachable")
-    }
-
-    // Parse and evaluate
-    Try {
-      val expr = Parser.parse(sourceCode)
-      val term = expr.toTerm()
-      val result = interpreter.eval(term)
-      result
-    } match {
-      case Success(value) => println(value)
-      case Failure(exception) => {
-        System.err.println(s"Error: ${exception.getMessage}")
-        exception.printStackTrace()
+      // Validate file exists
+      if (!sourceFile.exists()) {
+        System.err.println(s"Error: File not found: ${sourceFile.getPath}")
         System.exit(1)
       }
-    }
-  }
-}
 
-object Main {
-  def main(args: Array[String]): Unit = {
-    val exitCode = new CommandLine(new Main()).execute(args*)
-    System.exit(exitCode)
+      // Read source file
+      val sourceCode = Try {
+        val source = Source.fromFile(sourceFile)
+        try source.mkString finally source.close()
+      } match {
+        case Success(code) => code
+        case Failure(exception) =>
+          System.err.println(s"Error reading file: ${exception.getMessage}")
+          System.exit(1)
+          throw new RuntimeException("Unreachable")
+      }
+
+      // Select interpreter
+      val interpreter: Interpreter = config.interpreterType.toLowerCase match {
+        case "direct" => DirectInterpreter
+        case "trampoline" => TrampolineInterpreter
+        case "worklist" => WorkListInterpreter
+        case unknown =>
+          System.err.println(s"Error: Unknown interpreter type: $unknown")
+          System.err.println("Valid options are: direct, trampoline, worklist")
+          System.exit(1)
+          throw new RuntimeException("Unreachable")
+      }
+
+      // Parse and evaluate
+      Try {
+        val expr = Parser.parse(sourceCode)
+        val term = expr.toTerm()
+        val result = interpreter.eval(term)
+        result
+      } match {
+        case Success(value) => println(value)
+        case Failure(exception) =>
+          System.err.println(s"Error: ${exception.getMessage}")
+          exception.printStackTrace()
+          System.exit(1)
+      }
+    }
   }
 }

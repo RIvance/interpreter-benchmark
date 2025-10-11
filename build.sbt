@@ -4,9 +4,8 @@ ThisBuild / scalaVersion := "3.3.7"
 
 lazy val root = (project in file("."))
   .settings(
-    name := "interpreter-benchmark"
+    name := "stlc-interpreter"
   )
 
 libraryDependencies += "org.scala-lang.modules" %% "scala-parser-combinators" % "2.4.0"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % Test
-libraryDependencies += "info.picocli" % "picocli" % "4.7.7"
