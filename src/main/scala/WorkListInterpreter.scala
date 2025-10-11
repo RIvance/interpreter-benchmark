@@ -1,3 +1,5 @@
+import scala.annotation.tailrec
+
 /**
  * Small-step semantics is good for reasoning. For instance, standard type
  *  soundness results such as progress and preservation are proved with
@@ -101,7 +103,7 @@ object WorkListInterpreter extends Interpreter {
 
     infix def +(current: EnvTerm): EnvTerm = Merge(this, current)
 
-    def eval: Value = WorkList.Eval(Empty |- this).eval match {
+    final def eval: Value = WorkList.Eval(Empty |- this).eval match {
       case IntLit(n) => Value.IntVal(n)
       case BoolLit(b) => Value.BoolVal(b)
       case Record(fields) =>
@@ -138,86 +140,68 @@ object WorkListInterpreter extends Interpreter {
 
     import EnvTerm.*
 
-    private def evalThen[B](cont: EnvTerm => WorkList[B]): WorkList[B] = {
+    private final def eval: WorkList[EnvTerm] = WorkList.Eval(this)
+
+    private final def evalThen[B](cont: EnvTerm => WorkList[B]): WorkList[B] = {
       WorkList.Eval(this).andThen(cont)
     }
 
-    def step[B](f: EnvTerm => WorkList[B]): WorkList[B] = this match {
+    final def step[B](f: EnvTerm => WorkList[B]): WorkList[B] = this match {
       case _   |- value if value.isValue => f(value)
       case env |- Var(index) =>
         val lookedUp = env.lookup(index)
         (env |- lookedUp).evalThen(f)
 
       // Binary operations
-      case env |- BinOpInt(kind, left, right) => {
-        if left.isValue then {
-          if right.isValue then {
-            (left, right) match {
-              case (IntLit(l), IntLit(r)) =>
-                kind match {
-                  case IntOpKind.Add => f(IntLit(l + r))
-                  case IntOpKind.Sub => f(IntLit(l - r))
-                  case IntOpKind.Mul => f(IntLit(l * r))
-                }
-              case _ => throw new RuntimeException("Integer operation on non-integers")
+      case env |- BinOpInt(kind, left, right) => for {
+        leftValue <- (env |- left).eval
+        rightValue <- (env |- right).eval
+        result <- (leftValue, rightValue) match {
+          case (IntLit(l), IntLit(r)) =>
+            kind match {
+              case IntOpKind.Add => WorkList.pure(IntLit(l + r)).andThen(f)
+              case IntOpKind.Sub => WorkList.pure(IntLit(l - r)).andThen(f)
+              case IntOpKind.Mul => WorkList.pure(IntLit(l * r)).andThen(f)
             }
-          } else (env |- right).evalThen { rightValue =>
-            (env |- BinOpInt(kind, left, rightValue)).evalThen(f)
-          }
-        } else (env |- left).evalThen { leftValue =>
-          (env |- BinOpInt(kind, leftValue, right)).evalThen(f)
+          case _ => throw new RuntimeException("Integer operation on non-integers")
         }
-      }
+      } yield result
 
-      case env |- BinOpCmp(kind, left, right) => {
-        if left.isValue then {
-          if right.isValue then {
-            (left, right) match {
-              case (IntLit(l), IntLit(r)) =>
-                kind match {
-                  case CmpOpKind.Eq => f(BoolLit(l == r))
-                  case CmpOpKind.Lt => f(BoolLit(l < r))
-                  case CmpOpKind.Gt => f(BoolLit(l > r))
-                }
-              case (BoolLit(l), BoolLit(r)) if kind == CmpOpKind.Eq =>
-                f(BoolLit(l == r))
-              case _ => throw new RuntimeException("Comparison on incompatible types")
+      case env |- BinOpCmp(kind, left, right) => for {
+        leftValue <- (env |- left).eval
+        rightValue <- (env |- right).eval
+        result <- (leftValue, rightValue) match {
+          case (IntLit(l), IntLit(r)) =>
+            kind match {
+              case CmpOpKind.Eq => WorkList.pure(BoolLit(l == r)).andThen(f)
+              case CmpOpKind.Lt => WorkList.pure(BoolLit(l < r)).andThen(f)
+              case CmpOpKind.Gt => WorkList.pure(BoolLit(l > r)).andThen(f)
             }
-          } else (env |- right).evalThen { rightValue =>
-            (env |- BinOpCmp(kind, left, rightValue)).evalThen(f)
-          }
-        } else (env |- left).evalThen { leftValue =>
-          (env |- BinOpCmp(kind, leftValue, right)).evalThen(f)
+          case (BoolLit(l), BoolLit(r)) if kind == CmpOpKind.Eq =>
+            WorkList.pure(BoolLit(l == r)).andThen(f)
+          case _ => throw new RuntimeException("Comparison on incompatible types")
         }
-      }
+      } yield result
 
-      case env |- If(cond, thenBranch, elseBranch) => {
-        if cond.isValue then {
-          cond match {
-            case BoolLit(true)  => (env |- thenBranch).evalThen(f)
-            case BoolLit(false) => (env |- elseBranch).evalThen(f)
-            case _              => throw new RuntimeException("If condition must be boolean")
-          }
-        } else (env |- cond).evalThen { condValue =>
-          (env |- If(condValue, thenBranch, elseBranch)).evalThen(f)
+      case env |- If(cond, thenBranch, elseBranch) => for {
+        condValue <- (env |- cond).eval
+        result <- condValue match {
+          case BoolLit(true)  => (env |- thenBranch).evalThen(f)
+          case BoolLit(false) => (env |- elseBranch).evalThen(f)
+          case _              => throw new RuntimeException("If condition must be boolean")
         }
-      }
+      } yield result
 
-      case env |- App(fnTerm, argTerm) => {
-        (env |- fnTerm).evalThen {
-          case Closure(closureEnv, paramType, body) =>
-            (env |- argTerm).evalThen { argValue => (closureEnv + argValue |- body).evalThen(f) }
-          case _ => throw new RuntimeException("Runtime type error: expected closure")
-        }
-      }
+      case env |- App(fnTerm, argTerm) => for {
+        case Closure(closureEnv, paramType, body) <- (env |- fnTerm).eval
+        argValue <- (env |- argTerm).eval
+        result <- (closureEnv + argValue |- body).eval
+      } yield f(result).eval
 
-      case env |- Merge(prevEnv, current) => {
-        if prevEnv.isValue then {
-          (env |- current).evalThen(currentValue => (env |- Merge(prevEnv, currentValue)).evalThen(f))
-        } else {
-          (env |- prevEnv).evalThen(prevEnvValue => (env |- Merge(prevEnvValue, current)).evalThen(f))
-        }
-      }
+      case env |- Merge(prevEnv, current) => for {
+        prevEnvValue <- (env |- prevEnv).eval
+        currentValue <- (env |- current).eval
+      } yield f(prevEnvValue + currentValue).eval
 
       // Capture the current environment inside the closure
       case env |- Lam(paramType, body) => f(Closure(env, paramType, body))
@@ -272,18 +256,26 @@ object WorkListInterpreter extends Interpreter {
   }
 
   sealed trait WorkList[+A] {
-    def andThen[B](cont: A => WorkList[B]): WorkList[B] = WorkList.Bind(this, cont)
+    final def andThen[B](cont: A => WorkList[B]): WorkList[B] = WorkList.Bind(this, cont)
 
-    def step[B](cont: A => WorkList[B]): WorkList[B] = this match {
+    final def step[B](cont: A => WorkList[B]): WorkList[B] = this match {
       case WorkList.Return(value) => cont(value)
       case WorkList.Bind(workList, nextCont) => workList.andThen(a => nextCont(a).andThen(cont))
       case WorkList.Eval(work) => work.step(cont)
     }
 
-    def eval: A = this match {
+    @tailrec
+    final def eval: A = this match {
       case WorkList.Return(value) => value
       case WorkList.Bind(workList, cont) => workList.step(cont).eval
-      case WorkList.Eval(work) => work.step(a => WorkList.Return(a)).eval
+      case WorkList.Eval(work) => work.step[A](a => WorkList.Return(a)).eval
+    }
+
+    final def flatMap[B](f: A => WorkList[B]): WorkList[B] = andThen(f)
+    final def map[B](f: A => B): WorkList[B] = andThen(a => WorkList.Return(f(a)))
+    final def withFilter(f: A => Boolean): WorkList[A] = andThen { a =>
+      if f(a) then WorkList.Return(a)
+      else throw new RuntimeException("withFilter predicate failed")
     }
   }
 
@@ -291,6 +283,10 @@ object WorkListInterpreter extends Interpreter {
     case class Return[A](value: A) extends WorkList[A]
     case class Bind[A, B](workList: WorkList[A], cont: A => WorkList[B]) extends WorkList[B]
     case class Eval(work: |-) extends WorkList[EnvTerm]
+
+    final def flatMap[A, B](workList: WorkList[A])(f: A => WorkList[B]): WorkList[B] = workList.andThen(f)
+    final def map[A, B](workList: WorkList[A])(f: A => B): WorkList[B] = workList.andThen(a => Return(f(a)))
+    final def pure[A](value: A): WorkList[A] = Return(value)
   }
 
 }
