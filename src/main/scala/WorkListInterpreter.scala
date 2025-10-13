@@ -185,11 +185,12 @@ object WorkListInterpreter extends Interpreter {
 
       case env |- If(cond, thenBranch, elseBranch) => for {
         condValue <- (env |- cond).eval
-        result <- condValue match {
-          case BoolLit(true)  => (env |- thenBranch).evalThen(f)
-          case BoolLit(false) => (env |- elseBranch).evalThen(f)
+        branch <- condValue match {
+          case BoolLit(true)  => (env |- thenBranch).eval
+          case BoolLit(false) => (env |- elseBranch).eval
           case _              => throw new RuntimeException("If condition must be boolean")
         }
+        result <- (env |- branch).evalThen(f)
       } yield result
 
       case env |- App(fnTerm, argTerm) => for {
