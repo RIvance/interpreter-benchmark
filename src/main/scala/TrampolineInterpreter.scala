@@ -3,41 +3,14 @@ import scala.util.control.TailCalls.*
 object TrampolineInterpreter extends Interpreter {
 
   override def eval(term: Term)(using env: Env): Value = {
-    val trampEnv = env.map { case (k, v) => k -> valueToTramp(v) }
-    evalTramp(term)(using trampEnv).result.toValue
+    evalTramp(term)(using env).result
   }
 
-  private enum TrampValue {
-    case IntVal(n: Long)
-    case BoolVal(b: Boolean)
-    case Closure(env: Map[Int, TrampValue], body: Term)
-    case RecordVal(fields: Map[String, TrampValue])
-    case FixThunk(annotatedType: Type, body: Term, env: Map[Int, TrampValue] = Map.empty)
-
-    def toValue: Value = this match {
-      case IntVal(n) => Value.IntVal(n)
-      case BoolVal(b) => Value.BoolVal(b)
-      case Closure(env, body) => Value.Closure { arg =>
-        val newEnv = env + (0 -> valueToTramp(arg))
-        evalTramp(body)(using newEnv).result.toValue
-      }
-      case RecordVal(fields) => Value.RecordVal(fields.view.mapValues(_.toValue).toMap)
-      case FixThunk(_, _, _) => throw new RuntimeException("FixThunk should not appear as final value")
-    }
-  }
-
-  private def valueToTramp(v: Value): TrampValue = v match {
-    case Value.IntVal(n) => TrampValue.IntVal(n)
-    case Value.BoolVal(b) => TrampValue.BoolVal(b)
-    case Value.Closure(_) => throw new RuntimeException("Cannot convert HOAS closure to TrampValue")
-    case Value.RecordVal(fields) => TrampValue.RecordVal(fields.view.mapValues(valueToTramp).toMap)
-  }
-
-  private def evalTramp(term: Term)(using env: Map[Int, TrampValue]): TailRec[TrampValue] = term match {
+  private def evalTramp(term: Term)(using env: Map[Int, Value]): TailRec[Value] = term match {
 
     case Term.Var(index) =>
       env(index) match {
-        case fix @ TrampValue.FixThunk(annotatedType, body, captured) =>
+        case fix @ Value.FixThunk(annotatedType, body, captured) =>
           // When a FixThunk is looked up, evaluate its body in the captured environment
           //  and since we cannot have self-reference when building the captured env,
           //  we now put a simple thunk at index 0 that will evaluate to the fixpoint
@@ -46,33 +19,33 @@ object TrampolineInterpreter extends Interpreter {
       }
 
     case Term.Lam(parameterType, body) =>
-      done(TrampValue.Closure(env, body))
+      done(Value.Closure(env, body))
 
     case Term.App(leftTerm, rightTerm) =>
       for {
         leftValue <- evalTramp(leftTerm)
         rightValue <- evalTramp(rightTerm)
         result <- leftValue match {
-          case TrampValue.Closure(closureEnv, body) =>
+          case Value.Closure(closureEnv, body) =>
             val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
             tailcall(evalTramp(body)(using newEnv))
           case other => throw new RuntimeException(s"Runtime type error: expected closure, got $other")
         }
       } yield result
 
-    case Term.IntLit(n) => done(TrampValue.IntVal(n))
-    case Term.BoolLit(b) => done(TrampValue.BoolVal(b))
+    case Term.IntLit(n) => done(Value.IntVal(n))
+    case Term.BoolLit(b) => done(Value.BoolVal(b))
 
     case Term.BinOpInt(kind, leftTerm, rightTerm) =>
       for {
         leftValue <- evalTramp(leftTerm)
         rightValue <- evalTramp(rightTerm)
       } yield (leftValue, rightValue) match {
-        case (TrampValue.IntVal(l), TrampValue.IntVal(r)) =>
+        case (Value.IntVal(l), Value.IntVal(r)) =>
           kind match {
-            case IntOpKind.Add => TrampValue.IntVal(l + r)
-            case IntOpKind.Sub => TrampValue.IntVal(l - r)
-            case IntOpKind.Mul => TrampValue.IntVal(l * r)
+            case IntOpKind.Add => Value.IntVal(l + r)
+            case IntOpKind.Sub => Value.IntVal(l - r)
+            case IntOpKind.Mul => Value.IntVal(l * r)
           }
         case _ => throw new RuntimeException("Integer operation on non-integers")
       }
@@ -82,14 +55,14 @@ object TrampolineInterpreter extends Interpreter {
         leftValue <- evalTramp(leftTerm)
         rightValue <- evalTramp(rightTerm)
       } yield (leftValue, rightValue) match {
-        case (TrampValue.IntVal(l), TrampValue.IntVal(r)) =>
+        case (Value.IntVal(l), Value.IntVal(r)) =>
           kind match {
-            case CmpOpKind.Eq => TrampValue.BoolVal(l == r)
-            case CmpOpKind.Lt => TrampValue.BoolVal(l < r)
-            case CmpOpKind.Gt => TrampValue.BoolVal(l > r)
+            case CmpOpKind.Eq => Value.BoolVal(l == r)
+            case CmpOpKind.Lt => Value.BoolVal(l < r)
+            case CmpOpKind.Gt => Value.BoolVal(l > r)
           }
-        case (TrampValue.BoolVal(l), TrampValue.BoolVal(r)) if kind == CmpOpKind.Eq =>
-          TrampValue.BoolVal(l == r)
+        case (Value.BoolVal(l), Value.BoolVal(r)) if kind == CmpOpKind.Eq =>
+          Value.BoolVal(l == r)
         case _ => throw new RuntimeException("Comparison on incompatible types")
       }
 
@@ -97,8 +70,8 @@ object TrampolineInterpreter extends Interpreter {
       for {
         condValue <- evalTramp(cond)
         result <- condValue match {
-          case TrampValue.BoolVal(true) => tailcall(evalTramp(thenBranch))
-          case TrampValue.BoolVal(false) => tailcall(evalTramp(elseBranch))
+          case Value.BoolVal(true) => tailcall(evalTramp(thenBranch))
+          case Value.BoolVal(false) => tailcall(evalTramp(elseBranch))
           case _ => throw new RuntimeException("If condition must be boolean")
         }
       } yield result
@@ -107,14 +80,14 @@ object TrampolineInterpreter extends Interpreter {
       // Y-combinator approach: put a simple thunk at index 0
       // When it's looked up later, it will be evaluated in the environment where the lookup happens
       lazy val newEnv = env.map { case (i, v) => (i + 1) -> v } + (0 -> fixThunk)
-      lazy val fixThunk = TrampValue.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
+      lazy val fixThunk = Value.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
       tailcall(evalTramp(body)(using newEnv))
 
     case Term.Record(fields) =>
       val fieldsList = fields.toList
-      def evalFields(remaining: List[(String, Term)], acc: Map[String, TrampValue]): TailRec[TrampValue] = {
+      def evalFields(remaining: List[(String, Term)], acc: Map[String, Value]): TailRec[Value] = {
         remaining match {
-          case Nil => done(TrampValue.RecordVal(acc))
+          case Nil => done(Value.RecordVal(acc))
           case (name, term) :: rest =>
             for {
               value <- evalTramp(term)
@@ -128,7 +101,7 @@ object TrampolineInterpreter extends Interpreter {
       for {
         recordValue <- evalTramp(record)
       } yield recordValue match {
-        case TrampValue.RecordVal(fields) =>
+        case Value.RecordVal(fields) =>
           fields.getOrElse(field, throw new RuntimeException(s"Field '$field' not found in record"))
         case _ => throw new RuntimeException("Select operation on non-record value")
       }

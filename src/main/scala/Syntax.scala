@@ -162,13 +162,15 @@ enum Term {
 enum Value {
   case IntVal(n: Long)
   case BoolVal(b: Boolean)
-  case Closure(apply: Value => Value)
+  case Closure(env: Map[Int, Value], body: Term)
+  case FixThunk(annotatedType: Type, body: Term, env: Map[Int, Value] = Map.empty)
   case RecordVal(fields: Map[String, Value])
 
   override def toString: String = this match {
     case IntVal(n) => n.toString
     case BoolVal(b) => b.toString
-    case Closure(_) => "<closure>"
+    case Closure(_, body) => s"<closure: $body>"
+    case FixThunk(annotatedType, _, _) => s"<fixpoint of type $annotatedType>"
     case RecordVal(fields) => {
       val fieldStr = fields.map { case (name, value) => s"$name: $value" }.mkString(", ")
       s"{ $fieldStr }"
