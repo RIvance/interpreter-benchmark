@@ -169,8 +169,8 @@ enum Value {
   override def toString: String = this match {
     case IntVal(n) => n.toString
     case BoolVal(b) => b.toString
-    case Closure(_, body) => s"<closure: $body>"
-    case FixThunk(annotatedType, _, _) => s"<fixpoint of type $annotatedType>"
+    case Closure(_, body) => s"<closure>"
+    case FixThunk(annotatedType, _, _) => s"<fixpoint: $annotatedType>"
     case RecordVal(fields) => {
       val fieldStr = fields.map { case (name, value) => s"$name: $value" }.mkString(", ")
       s"{ $fieldStr }"

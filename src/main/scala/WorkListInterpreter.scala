@@ -1,293 +1,142 @@
 import scala.annotation.tailrec
 
-/**
- * Small-step semantics is good for reasoning. For instance, standard type
- *  soundness results such as progress and preservation are proved with
- *  small step semantics. However, small-step is bad for implementations:
- *  Two (performance) problems in small-step:
- *
- * 1) Substitution is bad as it requires traversing the terms each time it is used.
- *
- *  (\x. e) v ---> [v/x] e          </br>
- *
- * 2) AST keeps getting reconstructed
- *
- *  e1 ---> e1'                     </br>
- *  -----------------               </br>
- *  e1 e2 ---> e1' e2               </br>
- *
- *  Congruence rules like this one apply a rewrite step and rebuild the AST
- *
- *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1
- *  --------------------------------------------------------------------------              </br>
- *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2
- *  ------------------------------------------------------------------------------          </br>
- *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 3 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2 3
- *  ----------------------------------------------------------------------------------      </br>
- *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 3 4 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2 3 4
- *  ------------------------------------------------------------------------------------    </br>
- *  (\x1 x2 x3 x4 x5. x1 + ... + x5) 1 2 3 4 5 ---> (\x2 x3 x4 x5. 1 + ... + x5) 1 2 3 4
- *
- *  v = \x5. 1 + 2 + 3 + 4 + x5
- *
- * Big-step semantics does not have the performance problems of small-step. However,
- *  its (generally) recursive style is prone to stack-overflows. Furthermore,
- *  big-step has some problems for reasoning as it usually can only express properties
- *  about terminating programs.
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- *
- * Our goal is to find a style of semantics that is good for reasoning and also
- *  good for implementations.
- *
- * What we show next is an AST for STLC with an environment-based semantics
- *  (basically the variant described in Section 6.2).
- *
- *  This is based on:
- *    A Case for first-class environments, OOPSLA 2024
- *
- * In an environment based semantics, there is no substitution. Beta reduction is:
- *
- *  venv |- <\x. e, cenv> v ---> (cenv,v) |> e        </br>
- *  venv |- (\x. e) ---> <\x. e, venv>                </br>
- *
- * The environment based semantics is still small step and good for reasoning, and it
- *  also eliminates substitution, which is one of the burdens for small-step. But
- *  it does not eliminate the problem of AST reconstruction. Furthermore, the notion
- *  of boxes (used in beta reduction) is needed to represent intermediate states in reduction.
- *
- * To address the problems we use inspiration from a previous work on type inference where
- *  we have employed a worklist approach:
- *
- * A Mechanical Formalization of Higher-Ranked Polymorphic Type Inference, ICFP 2019
- *
- */
 object WorkListInterpreter extends Interpreter {
 
-  enum EnvTerm {
-    case Empty
-    case Var(index: Int)
-    case Lam(paramType: Type, body: EnvTerm)
-    case Closure(captured: EnvTerm, paramType: Type, body: EnvTerm)
-    case App(fnTerm: EnvTerm, argTerm: EnvTerm)
-    case IntLit(value: Long)
-    case BoolLit(value: Boolean)
-    case BinOpInt(kind: IntOpKind, leftTerm: EnvTerm, rightTerm: EnvTerm)
-    case BinOpCmp(kind: CmpOpKind, leftTerm: EnvTerm, rightTerm: EnvTerm)
-    case If(cond: EnvTerm, thenBranch: EnvTerm, elseBranch: EnvTerm)
-    case Fix(annotatedType: Type, body: EnvTerm)
-    case Merge(prevEnv: EnvTerm, current: EnvTerm)
-    case Record(fields: Map[String, EnvTerm])
-    case Proj(record: EnvTerm, field: String)
-
-    def isValue: Boolean = this match {
-      case Empty => true
-      case IntLit(_) => true
-      case BoolLit(_) => true
-      case Closure(_, _, _) => true
-      case Merge(prevEnv, current) if prevEnv.isValue && current.isValue => true
-      case Record(fields) if fields.values.forall(_.isValue) => true
-      case _ => false
-    }
-
-    def lookup(index: Int): EnvTerm = (index, this) match {
-      case (0, Merge(prevEnv, current)) => current
-      case (n, Merge(prevEnv, current)) => prevEnv.lookup(n - 1)
-      case (_, Empty) => throw new RuntimeException(s"Unbound variable at index $index")
-      case _ => throw new RuntimeException(s"Invalid environment lookup on $this for index $index")
-    }
-
-    // noinspection RedundantNewCaseClass <- just to keep IDE happy,
-    //  otherwise will it throw a false warning
-    infix def |-(term: EnvTerm) = new |-(this, term)
-
-    infix def +(current: EnvTerm): EnvTerm = Merge(this, current)
-
-    final def eval: Value = WorkList.Eval(Empty |- this).eval match {
-      case IntLit(n) => Value.IntVal(n)
-      case BoolLit(b) => Value.BoolVal(b)
-      case Record(fields) =>
-        Value.RecordVal(fields.view.mapValues(_.eval).toMap)
-      case Closure(captured, paramType, body) =>
-        throw new RuntimeException("Cannot return a closure as a value")
-      case _ => throw new RuntimeException("Evaluation did not result in a value")
-    }
+  override def eval(term: Term)(using env: Env): Value = {
+    evalWorkList(term)(using env).run
   }
 
-  extension (term: Term) {
-    def toEnvTerm: EnvTerm = term match {
-      case Term.Var(index) => EnvTerm.Var(index)
-      case Term.Lam(paramType, body) => EnvTerm.Lam(paramType, body.toEnvTerm)
-      case Term.App(leftTerm, rightTerm) => EnvTerm.App(leftTerm.toEnvTerm, rightTerm.toEnvTerm)
-      case Term.IntLit(n) => EnvTerm.IntLit(n)
-      case Term.BoolLit(b) => EnvTerm.BoolLit(b)
-      case Term.BinOpInt(kind, leftTerm, rightTerm) =>
-        EnvTerm.BinOpInt(kind, leftTerm.toEnvTerm, rightTerm.toEnvTerm)
-      case Term.BinOpCmp(kind, leftTerm, rightTerm) =>
-        EnvTerm.BinOpCmp(kind, leftTerm.toEnvTerm, rightTerm.toEnvTerm)
-      case Term.If(cond, thenBranch, elseBranch) =>
-        EnvTerm.If(cond.toEnvTerm, thenBranch.toEnvTerm, elseBranch.toEnvTerm)
-      case Term.Fix(annotatedType, body) => EnvTerm.Fix(annotatedType, body.toEnvTerm)
-      case Term.Record(fields) =>
-        EnvTerm.Record(fields.view.mapValues(_.toEnvTerm).toMap)
-      case Term.Proj(record, field) => EnvTerm.Proj(record.toEnvTerm, field)
-    }
-  }
-
-  override def eval(term: Term)(using _env: Env): Value = term.toEnvTerm.eval
-
-  case class |-(env: EnvTerm, term: EnvTerm) {
-
-    import EnvTerm.*
-
-    private final def eval: WorkList[EnvTerm] = WorkList.Eval(this)
-
-    private final def evalThen[B](cont: EnvTerm => WorkList[B]): WorkList[B] = {
-      WorkList.Eval(this).andThen(cont)
+  private def evalWorkList(term: Term)(using env: Env): WorkList[Value] = term match {
+    case Term.Var(index) => env(index) match {
+      case fix @ Value.FixThunk(annotatedType, body, captured) =>
+        WorkList.Eval(body, captured + (0 -> fix))
+      case value =>
+        WorkList.Return(value)
     }
 
-    final def step[B](f: EnvTerm => WorkList[B]): WorkList[B] = this match {
-      case _   |- value if value.isValue => f(value)
-      case env |- Var(index) =>
-        val lookedUp = env.lookup(index)
-        (env |- lookedUp).evalThen(f)
+    case Term.Lam(parameterType, body) => WorkList.Return(Value.Closure(env, body))
 
-      // Binary operations
-      case env |- BinOpInt(kind, left, right) => for {
-        leftValue <- (env |- left).eval
-        rightValue <- (env |- right).eval
-        result <- (leftValue, rightValue) match {
-          case (IntLit(l), IntLit(r)) =>
-            kind match {
-              case IntOpKind.Add => WorkList.pure(IntLit(l + r)).andThen(f)
-              case IntOpKind.Sub => WorkList.pure(IntLit(l - r)).andThen(f)
-              case IntOpKind.Mul => WorkList.pure(IntLit(l * r)).andThen(f)
+    case Term.App(leftTerm, rightTerm) => for {
+      leftValue <- WorkList.Eval(leftTerm, env)
+      rightValue <- WorkList.Eval(rightTerm, env)
+      result <- leftValue match {
+        case Value.Closure(closureEnv, body) =>
+          val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
+          WorkList.Eval(body, newEnv)
+        case _ =>
+          throw new RuntimeException("Runtime type error: expected closure")
+      }
+    } yield result
+
+    case Term.IntLit(n) => WorkList.Return(Value.IntVal(n))
+    case Term.BoolLit(b) => WorkList.Return(Value.BoolVal(b))
+
+    case Term.BinOpInt(kind, leftTerm, rightTerm) =>
+      for {
+        leftValue <- WorkList.Eval(leftTerm, env)
+        rightValue <- WorkList.Eval(rightTerm, env)
+      } yield (leftValue, rightValue) match {
+        case (Value.IntVal(l), Value.IntVal(r)) =>
+          kind match {
+            case IntOpKind.Add => Value.IntVal(l + r)
+            case IntOpKind.Sub => Value.IntVal(l - r)
+            case IntOpKind.Mul => Value.IntVal(l * r)
+          }
+        case _ => throw new RuntimeException("Integer operation on non-integers")
+      }
+
+    case Term.BinOpCmp(kind, leftTerm, rightTerm) =>
+      for {
+        leftValue <- WorkList.Eval(leftTerm, env)
+        rightValue <- WorkList.Eval(rightTerm, env)
+      } yield (leftValue, rightValue) match {
+        case (Value.IntVal(l), Value.IntVal(r)) =>
+          kind match {
+            case CmpOpKind.Eq => Value.BoolVal(l == r)
+            case CmpOpKind.Lt => Value.BoolVal(l < r)
+            case CmpOpKind.Gt => Value.BoolVal(l > r)
+          }
+        case (Value.BoolVal(l), Value.BoolVal(r)) if kind == CmpOpKind.Eq =>
+          Value.BoolVal(l == r)
+        case _ => throw new RuntimeException("Comparison on incompatible types")
+      }
+
+    case Term.If(cond, thenBranch, elseBranch) => for {
+      condValue <- WorkList.Eval(cond, env)
+      result <- condValue match {
+        case Value.BoolVal(true) => WorkList.Eval(thenBranch, env)
+        case Value.BoolVal(false) => WorkList.Eval(elseBranch, env)
+        case _ => throw new RuntimeException("If condition must be boolean")
+      }
+    } yield result
+
+    case Term.Fix(annotatedType, body) =>
+      // Y-combinator approach: put a simple thunk at index 0
+      // When it's looked up later, it will be evaluated in the environment where the lookup happens
+      lazy val fixThunk: Value = Value.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
+      val newEnv = env.map { case (i, v) => (i + 1) -> v } + (0 -> fixThunk)
+      WorkList.Eval(body, newEnv)
+
+    case Term.Record(fields) => {
+      def evalFields(remaining: List[(String, Term)], acc: Map[String, Value]): WorkList[Value] = {
+        remaining match {
+          case Nil => WorkList.Return(Value.RecordVal(acc))
+          case (name, term) :: rest => for {
+            value <- WorkList.Eval(term, env)
+            result <- evalFields(rest, acc + (name -> value))
+          } yield result
+        }
+      }
+      evalFields(fields.toList, Map.empty)
+    }
+
+    case Term.Proj(record, field) =>
+      for {
+        recordValue <- WorkList.Eval(record, env)
+        result <- recordValue match {
+          case Value.RecordVal(fields) =>
+            fields.get(field) match {
+              case Some(value) => WorkList.Return(value)
+              case None => throw new RuntimeException(s"Field '$field' not found in record")
             }
-          case _ => throw new RuntimeException("Integer operation on non-integers")
+          case _ => throw new RuntimeException("Select operation on non-record value")
         }
       } yield result
-
-      case env |- BinOpCmp(kind, left, right) => for {
-        leftValue <- (env |- left).eval
-        rightValue <- (env |- right).eval
-        result <- (leftValue, rightValue) match {
-          case (IntLit(l), IntLit(r)) =>
-            kind match {
-              case CmpOpKind.Eq => WorkList.pure(BoolLit(l == r)).andThen(f)
-              case CmpOpKind.Lt => WorkList.pure(BoolLit(l < r)).andThen(f)
-              case CmpOpKind.Gt => WorkList.pure(BoolLit(l > r)).andThen(f)
-            }
-          case (BoolLit(l), BoolLit(r)) if kind == CmpOpKind.Eq =>
-            WorkList.pure(BoolLit(l == r)).andThen(f)
-          case _ => throw new RuntimeException("Comparison on incompatible types")
-        }
-      } yield result
-
-      case env |- If(cond, thenBranch, elseBranch) => for {
-        condValue <- (env |- cond).eval
-        branch <- condValue match {
-          case BoolLit(true)  => (env |- thenBranch).eval
-          case BoolLit(false) => (env |- elseBranch).eval
-          case _              => throw new RuntimeException("If condition must be boolean")
-        }
-        result <- (env |- branch).evalThen(f)
-      } yield result
-
-      case env |- App(fnTerm, argTerm) => for {
-        case Closure(closureEnv, paramType, body) <- (env |- fnTerm).eval
-        argValue <- (env |- argTerm).eval
-        result <- (closureEnv + argValue |- body).evalThen(f)
-      } yield result
-
-      case env |- Merge(prevEnv, current) => for {
-        prevEnvValue <- (env |- prevEnv).eval
-        currentValue <- (env |- current).eval
-      } yield f(prevEnvValue + currentValue).eval
-
-      // Capture the current environment inside the closure
-      case env |- Lam(paramType, body) => f(Closure(env, paramType, body))
-
-      case env |- (fix @ Fix(annotatedType, body)) => {
-        // Y-combinator approach for fixpoint:
-        //  We evaluate the body in an environment that has the fix itself at index 0
-        //  When body is a lambda (which it should be for well-typed programs),
-        //  it will become a closure capturing this environment
-        //  Later, when Var(0) is accessed inside that closure, it will look up
-        //  the fix again, causing the recursion
-        (env + fix |- body).evalThen(f)
-      }
-
-      case env |- Record(fields) => {
-        // Evaluate all fields to values
-        def evalFields(remaining: List[(String, EnvTerm)], acc: Map[String, EnvTerm]): WorkList[EnvTerm] = {
-          remaining match {
-            case Nil => WorkList.Return(Record(acc))
-            case (name, fieldTerm) :: rest =>
-              if fieldTerm.isValue then {
-                evalFields(rest, acc + (name -> fieldTerm))
-              } else {
-                (env |- fieldTerm).evalThen { fieldValue =>
-                  evalFields(rest, acc + (name -> fieldValue))
-                }
-              }
-          }
-        }
-        evalFields(fields.toList, Map.empty).andThen(f)
-      }
-
-      case env |- Proj(record, field) => {
-        if record.isValue then {
-          record match {
-            case Record(fields) =>
-              fields.get(field) match {
-                case Some(value) => f(value)
-                case None => throw new RuntimeException(s"Field '$field' not found in record")
-              }
-            case _ => throw new RuntimeException("Projection on non-record value")
-          }
-        } else {
-          (env |- record).evalThen { recordValue =>
-            (env |- Proj(recordValue, field)).evalThen(f)
-          }
-        }
-      }
-
-      case _ |- _ => throw new RuntimeException(s"Invalid evaluation state: $this")
-    }
   }
 
-  sealed trait WorkList[+A] {
-    final def andThen[B](cont: A => WorkList[B]): WorkList[B] = WorkList.Bind(this, cont)
+  private sealed trait WorkList[+A] {
 
-    final def step[B](cont: A => WorkList[B]): WorkList[B] = this match {
-      case WorkList.Return(value) => cont(value)
-      case WorkList.Bind(workList, nextCont) => workList.andThen(a => nextCont(a).andThen(cont))
-      case WorkList.Eval(work) => work.step(cont)
-    }
+    final def flatMap[B](f: A => WorkList[B]): WorkList[B] = WorkList.Bind(this, f)
 
-    @tailrec
-    final def eval: A = this match {
-      case WorkList.Return(value) => value
-      case WorkList.Bind(workList, cont) => workList.step(cont).eval
-      case WorkList.Eval(work) => work.step[A](a => WorkList.Return(a)).eval
-    }
+    final def map[B](f: A => B): WorkList[B] = flatMap(a => WorkList.Return(f(a)))
 
-    final def flatMap[B](f: A => WorkList[B]): WorkList[B] = andThen(f)
-    final def map[B](f: A => B): WorkList[B] = andThen(a => WorkList.Return(f(a)))
-    final def withFilter(f: A => Boolean): WorkList[A] = andThen { a =>
+    final def withFilter(f: A => Boolean): WorkList[A] = flatMap { a =>
       if f(a) then WorkList.Return(a)
       else throw new RuntimeException("withFilter predicate failed")
     }
+
+    final def run: A = {
+      @tailrec
+      def loop(current: WorkList[A]): A = current match {
+        case WorkList.Return(value) => value
+        case WorkList.Eval(term, env) => loop(evalWorkList(term)(using env))
+        case WorkList.Bind(inner, cont) => inner match {
+          case WorkList.Return(value) =>
+            loop(cont(value))
+          case WorkList.Eval(term, env) =>
+            loop(evalWorkList(term)(using env).flatMap(cont))
+          case WorkList.Bind(innerInner, innerCont) =>
+            // Flatten nested binds: (inner >>= innerCont) >>= cont  ===  inner >>= (λx. innerCont(x) >>= cont)
+            loop(innerInner.flatMap(a => innerCont(a).flatMap(cont)))
+        }
+      }
+      loop(this)
+    }
   }
 
-  object WorkList {
+  private object WorkList {
     case class Return[A](value: A) extends WorkList[A]
     case class Bind[A, B](workList: WorkList[A], cont: A => WorkList[B]) extends WorkList[B]
-    case class Eval(work: |-) extends WorkList[EnvTerm]
-
-    final def flatMap[A, B](workList: WorkList[A])(f: A => WorkList[B]): WorkList[B] = workList.andThen(f)
-    final def map[A, B](workList: WorkList[A])(f: A => B): WorkList[B] = workList.andThen(a => Return(f(a)))
-    final def pure[A](value: A): WorkList[A] = Return(value)
+    case class Eval(term: Term, env: Env) extends WorkList[Value]
   }
-
 }

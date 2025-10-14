@@ -21,17 +21,16 @@ object TrampolineInterpreter extends Interpreter {
     case Term.Lam(parameterType, body) =>
       done(Value.Closure(env, body))
 
-    case Term.App(leftTerm, rightTerm) =>
-      for {
-        leftValue <- evalTramp(leftTerm)
-        rightValue <- evalTramp(rightTerm)
-        result <- leftValue match {
-          case Value.Closure(closureEnv, body) =>
-            val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
-            tailcall(evalTramp(body)(using newEnv))
-          case other => throw new RuntimeException(s"Runtime type error: expected closure, got $other")
-        }
-      } yield result
+    case Term.App(leftTerm, rightTerm) => for {
+      leftValue <- evalTramp(leftTerm)
+      rightValue <- evalTramp(rightTerm)
+      result <- leftValue match {
+        case Value.Closure(closureEnv, body) =>
+          val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
+          tailcall(evalTramp(body)(using newEnv))
+        case other => throw new RuntimeException(s"Runtime type error: expected closure, got $other")
+      }
+    } yield result
 
     case Term.IntLit(n) => done(Value.IntVal(n))
     case Term.BoolLit(b) => done(Value.BoolVal(b))
@@ -66,15 +65,14 @@ object TrampolineInterpreter extends Interpreter {
         case _ => throw new RuntimeException("Comparison on incompatible types")
       }
 
-    case Term.If(cond, thenBranch, elseBranch) =>
-      for {
-        condValue <- evalTramp(cond)
-        result <- condValue match {
-          case Value.BoolVal(true) => tailcall(evalTramp(thenBranch))
-          case Value.BoolVal(false) => tailcall(evalTramp(elseBranch))
-          case _ => throw new RuntimeException("If condition must be boolean")
-        }
-      } yield result
+    case Term.If(cond, thenBranch, elseBranch) => for {
+      condValue <- evalTramp(cond)
+      result <- condValue match {
+        case Value.BoolVal(true) => tailcall(evalTramp(thenBranch))
+        case Value.BoolVal(false) => tailcall(evalTramp(elseBranch))
+        case _ => throw new RuntimeException("If condition must be boolean")
+      }
+    } yield result
 
     case Term.Fix(annotatedType, body) =>
       // Y-combinator approach: put a simple thunk at index 0
@@ -83,19 +81,18 @@ object TrampolineInterpreter extends Interpreter {
       lazy val fixThunk = Value.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
       tailcall(evalTramp(body)(using newEnv))
 
-    case Term.Record(fields) =>
-      val fieldsList = fields.toList
+    case Term.Record(fields) => {
       def evalFields(remaining: List[(String, Term)], acc: Map[String, Value]): TailRec[Value] = {
         remaining match {
           case Nil => done(Value.RecordVal(acc))
-          case (name, term) :: rest =>
-            for {
-              value <- evalTramp(term)
-              result <- tailcall(evalFields(rest, acc + (name -> value)))
-            } yield result
+          case (name, term) :: rest => for {
+            value <- evalTramp(term)
+            result <- tailcall(evalFields(rest, acc + (name -> value)))
+          } yield result
         }
       }
-      tailcall(evalFields(fieldsList, Map.empty))
+      tailcall(evalFields(fields.toList, Map.empty))
+    }
 
     case Term.Proj(record, field) =>
       for {
