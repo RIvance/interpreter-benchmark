@@ -12,6 +12,15 @@ enum OpKind {
     case Add | Sub | Mul => Type.IntType
     case Eq | Lt | Gt => Type.BoolType
   }
+
+  override def toString: String = this match {
+    case Add => "+"
+    case Sub => "-"
+    case Mul => "*"
+    case Eq  => "=="
+    case Lt  => "<"
+    case Gt  => ">"
+  }
 }
 
 enum Expr {

@@ -92,7 +92,7 @@ object Main {
 
       // Select interpreter
       val interpreter: Interpreter = config.interpreterType.toLowerCase match {
-        case "direct" => DirectInterpreter
+        case "direct" => RecursiveBigStepInterpreter
         case "trampoline" => TrampolineInterpreter
         case "worklist" => WorkListInterpreter
         case unknown =>

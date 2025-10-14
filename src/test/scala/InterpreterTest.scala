@@ -3,20 +3,21 @@ import org.scalatest.matchers.should.Matchers
 
 class InterpreterTest extends AnyFunSuite with Matchers {
 
-  def testInterpreters(description: String, term: Term, expected: Value): Unit = {
+  lazy val interpreters: Set[Interpreter] = Set(
+    RecursiveBigStepInterpreter,
+    TrampolineInterpreter,
+    WorkListInterpreter,
+    SmallStepInterpreter
+  )
 
-    test(s"DirectInterpreter $description") {
-      val result = DirectInterpreter.eval(term)(using Map.empty)
-      result shouldEqual expected
-    }
-
-    test(s"TrampolineInterpreter $description") {
-      val result = TrampolineInterpreter.eval(term)(using Map.empty)
-      result shouldEqual expected
-    }
-
-    test(s"FirstClassEnvironmentsInterpreter $description") {
-      val result = WorkListInterpreter.eval(term)(using Map.empty)
+  def testInterpreters(
+    description: String,
+    term: Term,
+    expected: Value,
+    enabledInterpreters: Set[Interpreter] = interpreters
+  ): Unit = enabledInterpreters.foreach { interpreter =>
+    test(s"${interpreter.name} $description") {
+      val result = interpreter.eval(term)(using Map.empty)
       result shouldEqual expected
     }
   }

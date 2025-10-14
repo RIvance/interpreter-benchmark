@@ -1,4 +1,7 @@
-object DirectInterpreter extends Interpreter {
+object RecursiveBigStepInterpreter extends Interpreter {
+
+  override def name: String = "Recursive Big-Step Interpreter"
+  
   override def eval(term: Term)(using env: Env): Value = term match {
     
     case Term.Var(index) =>

@@ -8,4 +8,6 @@ extension (env: Env) def extend(arg: Value): Env = {
 
 trait Interpreter {
   def eval(term: Term)(using env: Env = Map.empty): Value
+  def name: String
+  override def toString: String = this.name
 }

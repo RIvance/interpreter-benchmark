@@ -2,6 +2,8 @@ import scala.annotation.tailrec
 
 object WorkListInterpreter extends Interpreter {
 
+  override def name: String = "Work-List Interpreter"
+
   override def eval(term: Term)(using env: Env): Value = {
     evalWorkList(term)(using env).run
   }

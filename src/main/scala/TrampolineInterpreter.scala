@@ -2,6 +2,8 @@ import scala.util.control.TailCalls.*
 
 object TrampolineInterpreter extends Interpreter {
 
+  override def name: String = "Trampoline Interpreter"
+  
   override def eval(term: Term)(using env: Env): Value = {
     evalTramp(term)(using env).result
   }
