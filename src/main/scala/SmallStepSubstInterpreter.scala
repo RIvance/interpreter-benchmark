@@ -1,6 +1,6 @@
 import scala.annotation.tailrec
 
-object SmallStepInterpreter extends Interpreter {
+object SmallStepSubstInterpreter extends Interpreter {
 
   import Term.*
 

@@ -1,4 +1,4 @@
-object RecursiveBigStepInterpreter extends Interpreter {
+object RecursiveInterpreter extends Interpreter {
 
   override def name: String = "Recursive Big-Step Interpreter"
   

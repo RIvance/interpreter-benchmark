@@ -4,10 +4,10 @@ import org.scalatest.matchers.should.Matchers
 class InterpreterTest extends AnyFunSuite with Matchers {
 
   lazy val interpreters: Set[Interpreter] = Set(
-    RecursiveBigStepInterpreter,
+    RecursiveInterpreter,
     TrampolineInterpreter,
     WorkListInterpreter,
-    SmallStepInterpreter
+    SmallStepSubstInterpreter
   )
 
   def testInterpreters(

@@ -1,6 +1,6 @@
 # Interpreter Benchmark
 
-A Simply Typed Lambda Calculus (STLC) interpreter with support for direct, trampoline, and worklist evaluation strategies. 
+A Simply Typed Lambda Calculus (STLC) interpreter with support for substitution (small-step), recursive, trampoline, and worklist evaluation strategies. 
 
 ## Usage
 
@@ -11,7 +11,7 @@ Arguments:
   <source-file>              Source file to evaluate (.stlc)
 
 Options:
-  -i, --interpreter <type>   Interpreter type: direct, trampoline, worklist (default: direct)
+  -i, --interpreter <type>   Interpreter type: subst, recursive, trampoline, worklist (default: recursive)
   -h, --help                 Show this help message
 ```
 

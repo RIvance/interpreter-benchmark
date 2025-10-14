@@ -15,7 +15,7 @@ object Main {
         |  <source-file>              Source file to evaluate (.stlc)
         |
         |Options:
-        |  -i, --interpreter <type>   Interpreter type: direct, trampoline, worklist (default: direct)
+        |  -i, --interpreter <type>   Interpreter type: substitution (default), recursive, trampoline, worklist
         |  -h, --help                 Show this help message
         |""".stripMargin
     )
@@ -23,39 +23,36 @@ object Main {
 
   private case class Config(
     sourceFile: Option[File] = None,
-    interpreterType: String = "direct"
+    interpreterType: String = "substitution"
   )
 
   private def parseArgs(args: Array[String]): Either[String, Config] = {
     @tailrec
-    def parse(remaining: List[String], config: Config): Either[String, Config] = {
-      remaining match {
-        case Nil =>
-          config.sourceFile match {
-            case Some(_) => Right(config)
-            case None => Left("Error: Source file is required")
-          }
-
-        case "-h" :: _ | "--help" :: _ =>
-          printUsage()
-          System.exit(0)
-          Right(config) // unreachable
-
-        case ("-i" | "--interpreter") :: interpreterType :: tail =>
-          parse(tail, config.copy(interpreterType = interpreterType))
-
-        case ("-i" | "--interpreter") :: Nil =>
-          Left("Error: --interpreter option requires an argument")
-
-        case arg :: tail if arg.startsWith("-") =>
-          Left(s"Error: Unknown option: $arg")
-
-        case sourceFile :: tail =>
-          config.sourceFile match {
-            case None => parse(tail, config.copy(sourceFile = Some(File(sourceFile))))
-            case Some(_) => Left(s"Error: Multiple source files specified: ${config.sourceFile.get.getPath} and $sourceFile")
-          }
+    def parse(remaining: List[String], config: Config): Either[String, Config] = remaining match {
+      case Nil => config.sourceFile match {
+        case Some(_) => Right(config)
+        case None => Left("Error: Source file is required")
       }
+
+      case "-h" :: _ | "--help" :: _ =>
+        printUsage()
+        System.exit(0)
+        Right(config) // unreachable
+
+      case ("-i" | "--interpreter") :: interpreterType :: tail =>
+        parse(tail, config.copy(interpreterType = interpreterType))
+
+      case ("-i" | "--interpreter") :: Nil =>
+        Left("Error: --interpreter option requires an argument")
+
+      case arg :: tail if arg.startsWith("-") =>
+        Left(s"Error: Unknown option: $arg")
+
+      case sourceFile :: tail =>
+        config.sourceFile match {
+          case None => parse(tail, config.copy(sourceFile = Some(File(sourceFile))))
+          case Some(_) => Left(s"Error: Multiple source files specified: ${config.sourceFile.get.getPath} and $sourceFile")
+        }
     }
 
     parse(args.toList, Config())
@@ -92,12 +89,13 @@ object Main {
 
       // Select interpreter
       val interpreter: Interpreter = config.interpreterType.toLowerCase match {
-        case "direct" => RecursiveBigStepInterpreter
-        case "trampoline" => TrampolineInterpreter
-        case "worklist" => WorkListInterpreter
+        case "s" | "subst"  | "substitution"  => SmallStepSubstInterpreter
+        case "r" | "rec"    | "recursive"     => RecursiveInterpreter
+        case "t" | "tramp"  | "trampoline"    => TrampolineInterpreter
+        case "w" | "wl"     | "worklist"      => WorkListInterpreter
         case unknown =>
           System.err.println(s"Error: Unknown interpreter type: $unknown")
-          System.err.println("Valid options are: direct, trampoline, worklist")
+          System.err.println("Valid options are: substitution, recursive, trampoline, worklist")
           System.exit(1)
           throw new RuntimeException("Unreachable")
       }
