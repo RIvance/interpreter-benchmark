@@ -31,34 +31,19 @@ object WorkListInterpreter extends Interpreter {
     case Term.IntLit(n) => WorkList.Return(Value.IntVal(n))
     case Term.BoolLit(b) => WorkList.Return(Value.BoolVal(b))
 
-    case Term.BinOpInt(kind, leftTerm, rightTerm) =>
+    case Term.BinOp(kind, leftTerm, rightTerm) =>
       for {
         leftValue <- WorkList.Eval(leftTerm, env)
         rightValue <- WorkList.Eval(rightTerm, env)
-      } yield (leftValue, rightValue) match {
-        case (Value.IntVal(l), Value.IntVal(r)) =>
-          kind match {
-            case IntOpKind.Add => Value.IntVal(l + r)
-            case IntOpKind.Sub => Value.IntVal(l - r)
-            case IntOpKind.Mul => Value.IntVal(l * r)
-          }
-        case _ => throw new RuntimeException("Integer operation on non-integers")
-      }
-
-    case Term.BinOpCmp(kind, leftTerm, rightTerm) =>
-      for {
-        leftValue <- WorkList.Eval(leftTerm, env)
-        rightValue <- WorkList.Eval(rightTerm, env)
-      } yield (leftValue, rightValue) match {
-        case (Value.IntVal(l), Value.IntVal(r)) =>
-          kind match {
-            case CmpOpKind.Eq => Value.BoolVal(l == r)
-            case CmpOpKind.Lt => Value.BoolVal(l < r)
-            case CmpOpKind.Gt => Value.BoolVal(l > r)
-          }
-        case (Value.BoolVal(l), Value.BoolVal(r)) if kind == CmpOpKind.Eq =>
-          Value.BoolVal(l == r)
-        case _ => throw new RuntimeException("Comparison on incompatible types")
+      } yield (kind, leftValue, rightValue) match {
+        case (OpKind.Add, Value.IntVal(l), Value.IntVal(r)) => Value.IntVal(l + r)
+        case (OpKind.Sub, Value.IntVal(l), Value.IntVal(r)) => Value.IntVal(l - r)
+        case (OpKind.Mul, Value.IntVal(l), Value.IntVal(r)) => Value.IntVal(l * r)
+        case (OpKind.Eq, Value.IntVal(l), Value.IntVal(r)) => Value.BoolVal(l == r)
+        case (OpKind.Lt, Value.IntVal(l), Value.IntVal(r)) => Value.BoolVal(l < r)
+        case (OpKind.Gt, Value.IntVal(l), Value.IntVal(r)) => Value.BoolVal(l > r)
+        case (OpKind.Eq, Value.BoolVal(l), Value.BoolVal(r)) => Value.BoolVal(l == r)
+        case _ => throw new RuntimeException("Binary operation on incompatible types")
       }
 
     case Term.If(cond, thenBranch, elseBranch) => for {

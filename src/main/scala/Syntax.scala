@@ -5,12 +5,13 @@ enum Type {
   case RecordType(fields: Map[String, Type])
 }
 
-enum IntOpKind {
-  case Add, Sub, Mul
-}
+enum OpKind {
+  case Add, Sub, Mul, Eq, Lt, Gt
 
-enum CmpOpKind {
-  case Eq, Lt, Gt
+  def resultType: Type = this match {
+    case Add | Sub | Mul => Type.IntType
+    case Eq | Lt | Gt => Type.BoolType
+  }
 }
 
 enum Expr {
@@ -19,8 +20,7 @@ enum Expr {
   case App(fn: Expr, arg: Expr)
   case IntLit(value: Long)
   case BoolLit(value: Boolean)
-  case BinOpInt(kind: IntOpKind, lhs: Expr, rhs: Expr)
-  case BinOpCmp(kind: CmpOpKind, lhs: Expr, rhs: Expr)
+  case BinOp(kind: OpKind, lhs: Expr, rhs: Expr)
   case If(cond: Expr, thenBr: Expr, elseBr: Expr)
   case Fix(name: String, tpe: Type, body: Expr)
   case Record(fields: Map[String, Expr])
@@ -59,15 +59,10 @@ enum Expr {
       case Expr.BoolLit(value) =>
         Term.BoolLit(value)
 
-      case Expr.BinOpInt(kind, lhs, rhs) =>
+      case Expr.BinOp(kind, lhs, rhs) =>
         val leftTerm = lhs.toTerm(stack)
         val rightTerm = rhs.toTerm(stack)
-        Term.BinOpInt(kind, leftTerm, rightTerm)
-
-      case Expr.BinOpCmp(kind, lhs, rhs) =>
-        val leftTerm = lhs.toTerm(stack)
-        val rightTerm = rhs.toTerm(stack)
-        Term.BinOpCmp(kind, leftTerm, rightTerm)
+        Term.BinOp(kind, leftTerm, rightTerm)
 
       case Expr.If(cond, thenBr, elseBr) =>
         val condTerm = cond.toTerm(stack)
@@ -112,8 +107,7 @@ enum Term {
   case App(leftTerm: Term, rightTerm: Term)
   case IntLit(n: Long)
   case BoolLit(b: Boolean)
-  case BinOpInt(kind: IntOpKind, leftTerm: Term, rightTerm: Term)
-  case BinOpCmp(kind: CmpOpKind, leftTerm: Term, rightTerm: Term)
+  case BinOp(kind: OpKind, leftTerm: Term, rightTerm: Term)
   case If(cond: Term, thenBranch: Term, elseBranch: Term)
   case Fix(annotatedType: Type, body: Term)
   case Record(fields: Map[String, Term])
@@ -140,8 +134,7 @@ enum Term {
 
     case Term.IntLit(_)         => Type.IntType
     case Term.BoolLit(_)        => Type.BoolType
-    case Term.BinOpInt(_, _, _) => Type.IntType
-    case Term.BinOpCmp(_, _, _) => Type.BoolType
+    case Term.BinOp(kind, _, _) => kind.resultType
 
     case Term.If(_, thenBranch, _) => thenBranch.infer(typeEnv)
 

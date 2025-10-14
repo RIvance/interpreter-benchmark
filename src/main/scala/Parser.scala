@@ -84,9 +84,9 @@ object Parser extends RegexParsers with PackratParsers {
   lazy val comparison: PackratParser[Expr] =
     arith ~ rep(compOp ~ arith) ^^ {
       case first ~ rest => rest.foldLeft(first) {
-        case (acc, "==" ~ rhs) => Expr.BinOpCmp(CmpOpKind.Eq, acc, rhs)
-        case (acc, "<"  ~ rhs) => Expr.BinOpCmp(CmpOpKind.Lt, acc, rhs)
-        case (acc, ">"  ~ rhs) => Expr.BinOpCmp(CmpOpKind.Gt, acc, rhs)
+        case (acc, "==" ~ rhs) => Expr.BinOp(OpKind.Eq, acc, rhs)
+        case (acc, "<"  ~ rhs) => Expr.BinOp(OpKind.Lt, acc, rhs)
+        case (acc, ">"  ~ rhs) => Expr.BinOp(OpKind.Gt, acc, rhs)
         case (_, _ ~ _) => throw IllegalStateException("unreachable")
       }
     }
@@ -99,8 +99,8 @@ object Parser extends RegexParsers with PackratParsers {
     term ~ rep(addOp ~ term) ^^ {
       case first ~ rest =>
         rest.foldLeft(first) {
-          case (acc, "+" ~ rhs) => Expr.BinOpInt(IntOpKind.Add, acc, rhs)
-          case (acc, "-" ~ rhs) => Expr.BinOpInt(IntOpKind.Sub, acc, rhs)
+          case (acc, "+" ~ rhs) => Expr.BinOp(OpKind.Add, acc, rhs)
+          case (acc, "-" ~ rhs) => Expr.BinOp(OpKind.Sub, acc, rhs)
           case (_, _ ~ _) => throw IllegalStateException("unreachable")
         }
     }
@@ -111,7 +111,7 @@ object Parser extends RegexParsers with PackratParsers {
   // multiplication
   lazy val term: PackratParser[Expr] =
     factor ~ rep("*" ~> factor) ^^ {
-      case first ~ rest => rest.foldLeft(first)((acc, rhs) => Expr.BinOpInt(IntOpKind.Mul, acc, rhs))
+      case first ~ rest => rest.foldLeft(first)((acc, rhs) => Expr.BinOp(OpKind.Mul, acc, rhs))
     }
 
   // application: atom atom ... (left-assoc)

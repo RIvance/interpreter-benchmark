@@ -40,63 +40,63 @@ class InterpreterTest extends AnyFunSuite with Matchers {
 
   // Test integer addition
   testInterpreters("evaluating addition",
-    Term.BinOpInt(IntOpKind.Add, Term.IntLit(10), Term.IntLit(32)),
+    Term.BinOp(OpKind.Add, Term.IntLit(10), Term.IntLit(32)),
     Value.IntVal(42)
   )
 
   // Test integer subtraction
   testInterpreters("evaluating subtraction",
-    Term.BinOpInt(IntOpKind.Sub, Term.IntLit(50), Term.IntLit(8)),
+    Term.BinOp(OpKind.Sub, Term.IntLit(50), Term.IntLit(8)),
     Value.IntVal(42)
   )
 
   // Test integer multiplication
   testInterpreters("evaluating multiplication",
-    Term.BinOpInt(IntOpKind.Mul, Term.IntLit(6), Term.IntLit(7)),
+    Term.BinOp(OpKind.Mul, Term.IntLit(6), Term.IntLit(7)),
     Value.IntVal(42)
   )
 
   // Test comparison equal
   testInterpreters("evaluating equality comparison (true)",
-    Term.BinOpCmp(CmpOpKind.Eq, Term.IntLit(42), Term.IntLit(42)),
+    Term.BinOp(OpKind.Eq, Term.IntLit(42), Term.IntLit(42)),
     Value.BoolVal(true)
   )
 
   testInterpreters("evaluating equality comparison (false)",
-    Term.BinOpCmp(CmpOpKind.Eq, Term.IntLit(42), Term.IntLit(43)),
+    Term.BinOp(OpKind.Eq, Term.IntLit(42), Term.IntLit(43)),
     Value.BoolVal(false)
   )
 
   // Test comparison less than
   testInterpreters("evaluating less than (true)",
-    Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(10), Term.IntLit(20)),
+    Term.BinOp(OpKind.Lt, Term.IntLit(10), Term.IntLit(20)),
     Value.BoolVal(true)
   )
 
   testInterpreters("evaluating less than (false)",
-    Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(20), Term.IntLit(10)),
+    Term.BinOp(OpKind.Lt, Term.IntLit(20), Term.IntLit(10)),
     Value.BoolVal(false)
   )
 
   // Test comparison greater than
   testInterpreters("evaluating greater than (true)",
-    Term.BinOpCmp(CmpOpKind.Gt, Term.IntLit(20), Term.IntLit(10)),
+    Term.BinOp(OpKind.Gt, Term.IntLit(20), Term.IntLit(10)),
     Value.BoolVal(true)
   )
 
   testInterpreters("evaluating greater than (false)",
-    Term.BinOpCmp(CmpOpKind.Gt, Term.IntLit(10), Term.IntLit(20)),
+    Term.BinOp(OpKind.Gt, Term.IntLit(10), Term.IntLit(20)),
     Value.BoolVal(false)
   )
 
   // Test boolean equality
   testInterpreters("evaluating boolean equality (true)",
-    Term.BinOpCmp(CmpOpKind.Eq, Term.BoolLit(true), Term.BoolLit(true)),
+    Term.BinOp(OpKind.Eq, Term.BoolLit(true), Term.BoolLit(true)),
     Value.BoolVal(true)
   )
 
   testInterpreters("evaluating boolean equality (false)",
-    Term.BinOpCmp(CmpOpKind.Eq, Term.BoolLit(true), Term.BoolLit(false)),
+    Term.BinOp(OpKind.Eq, Term.BoolLit(true), Term.BoolLit(false)),
     Value.BoolVal(false)
   )
 
@@ -115,7 +115,7 @@ class InterpreterTest extends AnyFunSuite with Matchers {
   // Test if with condition evaluation
   testInterpreters("evaluating if with computed condition",
     Term.If(
-      Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(5), Term.IntLit(10)),
+      Term.BinOp(OpKind.Lt, Term.IntLit(5), Term.IntLit(10)),
       Term.IntLit(100),
       Term.IntLit(200)
     ),
@@ -136,7 +136,7 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     // (λx:Int. x + 10) 32
     val addTenFn = Term.Lam(
       Type.IntType,
-      Term.BinOpInt(IntOpKind.Add, Term.Var(0), Term.IntLit(10))
+      Term.BinOp(OpKind.Add, Term.Var(0), Term.IntLit(10))
     )
     Term.App(addTenFn, Term.IntLit(32))
   },
@@ -150,7 +150,7 @@ class InterpreterTest extends AnyFunSuite with Matchers {
       Type.IntType,
       Term.Lam(
         Type.IntType,
-        Term.BinOpInt(IntOpKind.Add, Term.Var(1), Term.Var(0))
+        Term.BinOp(OpKind.Add, Term.Var(1), Term.Var(0))
       )
     )
     val partial = Term.App(addFn, Term.IntLit(30))
@@ -167,7 +167,7 @@ class InterpreterTest extends AnyFunSuite with Matchers {
       Term.App(
         Term.Lam(
           Type.IntType,
-          Term.BinOpInt(IntOpKind.Mul, Term.Var(1), Term.Var(0))
+          Term.BinOp(OpKind.Mul, Term.Var(1), Term.Var(0))
         ),
         Term.IntLit(7)
       )
@@ -184,14 +184,14 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     val factorialBody = Term.Lam(
       Type.IntType,
       Term.If(
-        Term.BinOpCmp(CmpOpKind.Eq, Term.Var(0), Term.IntLit(0)),
+        Term.BinOp(OpKind.Eq, Term.Var(0), Term.IntLit(0)),
         Term.IntLit(1),
-        Term.BinOpInt(
-          IntOpKind.Mul,
+        Term.BinOp(
+          OpKind.Mul,
           Term.Var(0),
           Term.App(
             Term.Var(1), // reference to the fixpoint
-            Term.BinOpInt(IntOpKind.Sub, Term.Var(0), Term.IntLit(1))
+            Term.BinOp(OpKind.Sub, Term.Var(0), Term.IntLit(1))
           )
         )
       )
@@ -209,14 +209,14 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     val sumBody = Term.Lam(
       Type.IntType,
       Term.If(
-        Term.BinOpCmp(CmpOpKind.Eq, Term.Var(0), Term.IntLit(0)),
+        Term.BinOp(OpKind.Eq, Term.Var(0), Term.IntLit(0)),
         Term.IntLit(0),
-        Term.BinOpInt(
-          IntOpKind.Add,
+        Term.BinOp(
+          OpKind.Add,
           Term.Var(0),
           Term.App(
             Term.Var(1),
-            Term.BinOpInt(IntOpKind.Sub, Term.Var(0), Term.IntLit(1))
+            Term.BinOp(OpKind.Sub, Term.Var(0), Term.IntLit(1))
           )
         )
       )
@@ -234,17 +234,17 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     val fibonacciBody = Term.Lam(
       Type.IntType,
       Term.If(
-        Term.BinOpCmp(CmpOpKind.Lt, Term.Var(0), Term.IntLit(2)),
+        Term.BinOp(OpKind.Lt, Term.Var(0), Term.IntLit(2)),
         Term.Var(0),
-        Term.BinOpInt(
-          IntOpKind.Add,
+        Term.BinOp(
+          OpKind.Add,
           Term.App(
             Term.Var(1), // reference to the fixpoint
-            Term.BinOpInt(IntOpKind.Sub, Term.Var(0), Term.IntLit(1))
+            Term.BinOp(OpKind.Sub, Term.Var(0), Term.IntLit(1))
           ),
           Term.App(
             Term.Var(1), // reference to the fixpoint
-            Term.BinOpInt(IntOpKind.Sub, Term.Var(0), Term.IntLit(2))
+            Term.BinOp(OpKind.Sub, Term.Var(0), Term.IntLit(2))
           )
         )
       )
@@ -259,14 +259,14 @@ class InterpreterTest extends AnyFunSuite with Matchers {
   testInterpreters("evaluating complex nested expression", {
     // ((λx:Int. x * 2) 10) + ((λy:Int. y - 8) 20)
     val leftPart = Term.App(
-      Term.Lam(Type.IntType, Term.BinOpInt(IntOpKind.Mul, Term.Var(0), Term.IntLit(2))),
+      Term.Lam(Type.IntType, Term.BinOp(OpKind.Mul, Term.Var(0), Term.IntLit(2))),
       Term.IntLit(10)
     )
     val rightPart = Term.App(
-      Term.Lam(Type.IntType, Term.BinOpInt(IntOpKind.Sub, Term.Var(0), Term.IntLit(8))),
+      Term.Lam(Type.IntType, Term.BinOp(OpKind.Sub, Term.Var(0), Term.IntLit(8))),
       Term.IntLit(20)
     )
-    Term.BinOpInt(IntOpKind.Add, leftPart, rightPart)
+    Term.BinOp(OpKind.Add, leftPart, rightPart)
   },
     Value.IntVal(32) // (10*2) + (20-8) = 20 + 12 = 32
   )
@@ -287,8 +287,8 @@ class InterpreterTest extends AnyFunSuite with Matchers {
 
   testInterpreters("evaluating record with computed fields",
     Term.Record(Map(
-      "sum" -> Term.BinOpInt(IntOpKind.Add, Term.IntLit(1), Term.IntLit(2)),
-      "product" -> Term.BinOpInt(IntOpKind.Mul, Term.IntLit(3), Term.IntLit(4))
+      "sum" -> Term.BinOp(OpKind.Add, Term.IntLit(1), Term.IntLit(2)),
+      "product" -> Term.BinOp(OpKind.Mul, Term.IntLit(3), Term.IntLit(4))
     )),
     Value.RecordVal(Map("sum" -> Value.IntVal(3), "product" -> Value.IntVal(12)))
   )
@@ -296,14 +296,14 @@ class InterpreterTest extends AnyFunSuite with Matchers {
   testInterpreters("evaluating record with boolean fields",
     Term.Record(Map(
       "flag" -> Term.BoolLit(true),
-      "comparison" -> Term.BinOpCmp(CmpOpKind.Lt, Term.IntLit(5), Term.IntLit(10))
+      "comparison" -> Term.BinOp(OpKind.Lt, Term.IntLit(5), Term.IntLit(10))
     )),
     Value.RecordVal(Map("flag" -> Value.BoolVal(true), "comparison" -> Value.BoolVal(true)))
   )
 
   testInterpreters("evaluating computation with record field selection",
-    Term.BinOpInt(
-      IntOpKind.Add,
+    Term.BinOp(
+      OpKind.Add,
       Term.Proj(Term.Record(Map("x" -> Term.IntLit(10), "y" -> Term.IntLit(20))), "x"),
       Term.Proj(Term.Record(Map("x" -> Term.IntLit(10), "y" -> Term.IntLit(20))), "y")
     ),
@@ -334,4 +334,13 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     ),
     Value.IntVal(5)
   )
+
+  test("Worklist and trampoline should handle deep recursion without stack overflow") {
+    val code = "(fix countdown: Int -> Int. \\n: Int. if n > 0 then countdown (n - 1) else 0) 1000000"
+    val expr = Parser.parse(code)
+    val term = expr.toTerm(Nil)
+    WorkListInterpreter.eval(term)
+    TrampolineInterpreter.eval(term)
+  }
+
 }
