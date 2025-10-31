@@ -10,18 +10,9 @@ object TrampolineInterpreter extends Interpreter {
 
   private def evalTramp(term: Term)(using env: Map[Int, Value]): TailRec[Value] = term match {
 
-    case Term.Var(index) =>
-      env(index) match {
-        case fix @ Value.FixThunk(annotatedType, body, captured) =>
-          // When a FixThunk is looked up, evaluate its body in the captured environment
-          //  and since we cannot have self-reference when building the captured env,
-          //  we now put a simple thunk at index 0 that will evaluate to the fixpoint
-          tailcall(evalTramp(body)(using captured + (0 -> fix)))
-        case value => done(value)
-      }
+    case Term.Var(index) => done(env(index))
 
-    case Term.Lam(parameterType, body) =>
-      done(Value.Closure(env, body))
+    case Term.Lam(parameterType, body) => done(Value.Closure(env, body))
 
     case Term.App(leftTerm, rightTerm) => for {
       leftValue <- evalTramp(leftTerm)
@@ -30,6 +21,18 @@ object TrampolineInterpreter extends Interpreter {
         case Value.Closure(closureEnv, body) =>
           val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
           tailcall(evalTramp(body)(using newEnv))
+        case fix @ Value.FixThunk(annotatedType, body, captured) =>
+          // Unfold the fixpoint and apply it to the argument
+          val unfoldedEnv = captured + (0 -> fix)
+          for {
+            unfoldedValue <- tailcall(evalTramp(body)(using unfoldedEnv))
+            finalResult <- unfoldedValue match {
+              case Value.Closure(closureEnv, closureBody) =>
+                val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
+                tailcall(evalTramp(closureBody)(using newEnv))
+              case _ => throw new RuntimeException("Runtime type error: fixpoint did not produce a function")
+            }
+          } yield finalResult
         case other => throw new RuntimeException(s"Runtime type error: expected closure, got $other")
       }
     } yield result
@@ -62,11 +65,8 @@ object TrampolineInterpreter extends Interpreter {
     } yield result
 
     case Term.Fix(annotatedType, body) =>
-      // Y-combinator approach: put a simple thunk at index 0
-      // When it's looked up later, it will be evaluated in the environment where the lookup happens
-      lazy val newEnv = env.map { case (i, v) => (i + 1) -> v } + (0 -> fixThunk)
-      lazy val fixThunk = Value.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
-      tailcall(evalTramp(body)(using newEnv))
+      // Return a FixThunk value - it only unfolds when applied to an argument
+      done(Value.FixThunk(annotatedType, body, env))
 
     case Term.Record(fields) => {
       def evalFields(remaining: List[(String, Term)], acc: Map[String, Value]): TailRec[Value] = {

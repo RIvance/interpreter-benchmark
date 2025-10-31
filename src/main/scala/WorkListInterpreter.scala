@@ -9,12 +9,8 @@ object WorkListInterpreter extends Interpreter {
   }
 
   private def evalWorkList(term: Term)(using env: Env): WorkList[Value] = term match {
-    case Term.Var(index) => env(index) match {
-      case fix @ Value.FixThunk(annotatedType, body, captured) =>
-        WorkList.Eval(body, captured + (0 -> fix))
-      case value =>
-        WorkList.Return(value)
-    }
+
+    case Term.Var(index) => WorkList.Return(env(index))
 
     case Term.Lam(parameterType, body) => WorkList.Return(Value.Closure(env, body))
 
@@ -25,6 +21,18 @@ object WorkListInterpreter extends Interpreter {
         case Value.Closure(closureEnv, body) =>
           val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
           WorkList.Eval(body, newEnv)
+        case fix @ Value.FixThunk(annotatedType, body, captured) =>
+          // Unfold the fixpoint and apply it to the argument
+          val unfoldedEnv = captured + (0 -> fix)
+          for {
+            unfoldedValue <- WorkList.Eval(body, unfoldedEnv)
+            finalResult <- unfoldedValue match {
+              case Value.Closure(closureEnv, closureBody) =>
+                val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
+                WorkList.Eval(closureBody, newEnv)
+              case _ => throw new RuntimeException("Runtime type error: fixpoint did not produce a function")
+            }
+          } yield finalResult
         case _ =>
           throw new RuntimeException("Runtime type error: expected closure")
       }
@@ -58,11 +66,8 @@ object WorkListInterpreter extends Interpreter {
     } yield result
 
     case Term.Fix(annotatedType, body) =>
-      // Y-combinator approach: put a simple thunk at index 0
-      // When it's looked up later, it will be evaluated in the environment where the lookup happens
-      lazy val fixThunk: Value = Value.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
-      val newEnv = env.map { case (i, v) => (i + 1) -> v } + (0 -> fixThunk)
-      WorkList.Eval(body, newEnv)
+      // Return a FixThunk value - it only unfolds when applied to an argument
+      WorkList.Return(Value.FixThunk(annotatedType, body, env))
 
     case Term.Record(fields) => {
       def evalFields(remaining: List[(String, Term)], acc: Map[String, Value]): WorkList[Value] = {

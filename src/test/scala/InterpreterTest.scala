@@ -344,4 +344,14 @@ class InterpreterTest extends AnyFunSuite with Matchers {
     TrampolineInterpreter.eval(term)
   }
 
+  test("Fixpoint unfold should terminate correctly") {
+    val code = "(fix a: Int . (fn x: Int => 0) a)"
+    val expr = Parser.parse(code)
+    val term = expr.toTerm(Nil)
+    RecursiveInterpreter.eval(term)
+    TrampolineInterpreter.eval(term)
+    WorkListInterpreter.eval(term)
+    SmallStepSubstInterpreter.eval(term)
+  }
+
 }

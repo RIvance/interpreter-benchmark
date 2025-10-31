@@ -4,17 +4,9 @@ object RecursiveInterpreter extends Interpreter {
   
   override def eval(term: Term)(using env: Env): Value = term match {
     
-    case Term.Var(index) =>
-      env.apply(index) match {
-        case fix @ Value.FixThunk(annotatedType, body, captured) =>
-          // When a FixThunk is looked up, evaluate its body in the captured environment
-          // with the thunk itself at index 0 for self-reference
-          eval(body)(using captured + (0 -> fix))
-        case value => value
-      }
+    case Term.Var(index) => env.apply(index)
 
-    case Term.Lam(parameterType, body) =>
-      Value.Closure(env, body)
+    case Term.Lam(parameterType, body) => Value.Closure(env, body)
 
     case Term.App(leftTerm, rightTerm) =>
       val leftValue = eval(leftTerm)
@@ -23,6 +15,17 @@ object RecursiveInterpreter extends Interpreter {
         case Value.Closure(closureEnv, body) =>
           val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
           eval(body)(using newEnv)
+        case fix @ Value.FixThunk(annotatedType, body, captured) =>
+          // Unfold the fixpoint and apply it to the argument
+          val unfoldedEnv = captured + (0 -> fix)
+          val unfoldedValue = eval(body)(using unfoldedEnv)
+          // Now apply the unfolded value to the argument
+          unfoldedValue match {
+            case Value.Closure(closureEnv, closureBody) =>
+              val newEnv = closureEnv.map { case (i, v) => (i + 1) -> v } + (0 -> rightValue)
+              eval(closureBody)(using newEnv)
+            case _ => throw new RuntimeException("Runtime type error: fixpoint did not produce a function")
+          }
         case _ => throw new RuntimeException("Runtime type error: expected closure")
       }
 
@@ -51,10 +54,8 @@ object RecursiveInterpreter extends Interpreter {
       }
 
     case Term.Fix(annotatedType, body) =>
-      // Create a thunk that will be used for self-reference
-      lazy val fixThunk: Value = Value.FixThunk(annotatedType, body, env.map { case (i, v) => (i + 1) -> v })
-      val newEnv = env.map { case (i, v) => (i + 1) -> v } + (0 -> fixThunk)
-      eval(body)(using newEnv)
+      // Return a FixThunk value - it only unfolds when applied to an argument
+      Value.FixThunk(annotatedType, body, env)
 
     case Term.Record(fields) =>
       val evaluatedFields = fields.map { case (name, term) => (name, eval(term)) }

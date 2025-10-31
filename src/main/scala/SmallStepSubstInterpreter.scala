@@ -80,6 +80,7 @@ object SmallStepSubstInterpreter extends Interpreter {
       case IntLit(_) => true
       case BoolLit(_) => true
       case Lam(_, _) => true
+      case Fix(_, _) => true  // Fix is a value - only unfolds when applied
       case Record(fields) => fields.values.forall(_.isValue)
       case _ => false
     }
@@ -90,6 +91,7 @@ object SmallStepSubstInterpreter extends Interpreter {
       case IntLit(n) => Value.IntVal(n)
       case BoolLit(b) => Value.BoolVal(b)
       case Lam(_, _) => throw RuntimeException("Cannot convert lambda to value directly")
+      case Fix(annotatedType, body) => Value.FixThunk(annotatedType, body, Map.empty)
       case Record(fields) =>
         val valueFields = fields.view.mapValues(_.toValue).toMap
         Value.RecordVal(valueFields)
@@ -98,6 +100,10 @@ object SmallStepSubstInterpreter extends Interpreter {
   }
 
   private def step(term: Term): Option[Term] = term match {
+    case App(fix @ Fix(_, body), arg) if arg.isValue =>
+      // (fix x. t) v  ~~>  (t[x ↦ fix x. t]) v
+      Some(App(body.subst(0, fix).shift(-1), arg))
+
     case App(Lam(_, body), arg) if arg.isValue =>
       // (λx. body) v  ~~>  body[x ↦ v]
       Some(body.subst(0, arg).shift(-1))
@@ -144,9 +150,6 @@ object SmallStepSubstInterpreter extends Interpreter {
       // if false then t1 else t2  ~~>  t2
       Some(elseBranch)
 
-    case fix @ Fix(_, body) =>
-      // μx.t  ~~>  t[x ↦ μx.t]
-      Some(body.subst(0, fix).shift(-1))
 
     case Record(fields) if !fields.values.forall(_.isValue) =>
       // {l1 = t1, ..., ln = tn}  ~~>  {l1 = v1, ..., li = ti', ..., ln = tn}
