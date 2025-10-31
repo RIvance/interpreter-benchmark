@@ -1,0 +1,6 @@
+// Linear tail recursion
+fix sumTail: Int -> Int. \n: Int.
+  let rec loop: Int -> Int -> Int = fn acc: Int => fn k: Int =>
+    if k < 1 then acc else loop (acc + k) (k - 1)
+  in loop 0 n
+

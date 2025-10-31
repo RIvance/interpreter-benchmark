@@ -1,0 +1,6 @@
+// Tail Fibonacci (accumulators)
+fix fibTail: Int -> Int. \n: Int.
+  let rec loop: Int -> Int -> Int -> Int =
+    fn a: Int => fn b: Int => fn i: Int =>
+      if i == 0 then a else loop b (a + b) (i - 1)
+  in loop 0 1 n

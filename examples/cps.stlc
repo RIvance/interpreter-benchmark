@@ -1,0 +1,7 @@
+// CPS sum (continuation-heavy)
+fix sumCPS: Int -> Int. \n: Int.
+  let rec sum: Int -> (Int -> Int) -> Int =
+    fn k: Int => fn kcont: Int -> Int =>
+      if k < 1 then kcont 0
+      else sum (k - 1) (fn acc: Int => kcont (acc + k))
+  in sum n (fn z: Int => z)

@@ -1,8 +1,0 @@
-// expect: 6556785355
-// A recursive function with large number to test stack overflow
-// In expectation, direct interpreter will overflow the stack
-//  but CPS (trampoline) interpreter will not.
-let rec sum: Int -> Int = fn n: Int =>
-  if n < 1 then 0
-  else n + sum (n - 1)
-in sum 114514

@@ -1,0 +1,16 @@
+// Collatz length
+fix collatzLen: Int -> Int. \n: Int.
+  let rec isEven: Int -> Bool =
+    fn k: Int => 
+      if k < 0 then false
+      else if k < 2 then (k == 0) else isEven (k - 2)
+  in
+  let rec halve: Int -> Int =
+    fn k: Int => if k < 2 then 0 else 1 + halve (k - 2)
+  in
+  let rec step: Int -> Int -> Int =
+    fn k: Int => fn len: Int =>
+      if k < 2 then len
+      else if isEven k then step (halve k) (len + 1)
+      else step (3 * k + 1) (len + 1)
+  in step n 0

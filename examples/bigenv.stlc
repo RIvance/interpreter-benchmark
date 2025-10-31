@@ -1,0 +1,6 @@
+// Create a big environment using lets
+fix manyLets: Int -> Int. \n: Int.
+  let rec build: Int -> Int -> Int =
+    fn i: Int => fn acc: Int =>
+      if i == 0 then acc else let acc2 = acc + i in build (i - 1) acc2
+  in build n 0

@@ -1,0 +1,8 @@
+// Ackermann (m = 3)
+fix ack3: Int -> Int. \n: Int.
+  let rec A: Int -> Int -> Int =
+    fn m: Int => fn x: Int =>
+      if m == 0 then x + 1
+      else if x == 0 then A (m - 1) 1
+      else A (m - 1) (A m (x - 1))
+  in A 3 n

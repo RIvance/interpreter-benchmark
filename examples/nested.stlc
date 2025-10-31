@@ -1,0 +1,7 @@
+// Nested β-reductions (build/apply n lambdas)
+fix nestIncs: Int -> Int. fn n: Int =>
+  let rec build: Int -> (Int -> Int) =
+    fn k: Int =>
+      if k == 0 then (fn x: Int => x)
+      else (fn x: Int => (build (k - 1)) (x + 1))
+  in (build n) 0

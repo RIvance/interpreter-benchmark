@@ -1,0 +1,6 @@
+// Higher-order fold (closure calls)
+fix foldSumUpTo: Int -> Int. \n: Int.
+  let rec for: Int -> (Int -> Int -> Int) -> Int -> Int =
+    fn k: Int => fn f: Int -> Int -> Int => fn acc: Int =>
+      if k == 0 then acc else for (k - 1) f (f acc k)
+  in for n (fn a: Int => fn i: Int => a + i) 0

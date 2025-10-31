@@ -1,0 +1,3 @@
+// Non-tail sum (deep pending adds)
+fix sum: Int -> Int. fn n: Int =>
+  if n < 1 then 0 else n + sum (n - 1)
